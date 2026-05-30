@@ -26,6 +26,7 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
 )
+from .history import async_get_history_points
 from .predictor import BatteryInputs, BatteryPrediction, predict
 
 _LOGGER = logging.getLogger(__name__)
@@ -62,8 +63,18 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         )
 
     async def _async_update_data(self) -> BatteryPrediction:
-        """Fetch source states and compute forecast."""
+        """Fetch source states, recorder history, and compute forecast."""
         data: dict[str, Any] = self.config_entry.data
+        history_window = int(data.get(CONF_HISTORY_WINDOW_MINUTES, DEFAULT_HISTORY_WINDOW_MINUTES))
+        entity_map = {
+            "voltage": data.get(CONF_VOLTAGE_SENSOR),
+            "current": data.get(CONF_CURRENT_SENSOR),
+            "charge_power": data.get(CONF_CHARGE_POWER_SENSOR),
+            "discharge_power": data.get(CONF_DISCHARGE_POWER_SENSOR),
+            "temperature": data.get(CONF_TEMPERATURE_SENSOR),
+        }
+        history = await async_get_history_points(self.hass, entity_map, history_window)
+
         inputs = BatteryInputs(
             algorithm=str(data.get(CONF_ALGORITHM, DEFAULT_ALGORITHM)),
             capacity_ah=float(data[CONF_BATTERY_CAPACITY_AH]),
@@ -73,9 +84,9 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             charge_power=_state_float(self.hass, data.get(CONF_CHARGE_POWER_SENSOR)),
             discharge_power=_state_float(self.hass, data.get(CONF_DISCHARGE_POWER_SENSOR)),
             temperature=_state_float(self.hass, data.get(CONF_TEMPERATURE_SENSOR)),
-            history_window_minutes=int(data.get(CONF_HISTORY_WINDOW_MINUTES, DEFAULT_HISTORY_WINDOW_MINUTES)),
+            history_window_minutes=history_window,
             previous_soc_percent=self._last_soc,
-            history=[],
+            history=history,
         )
         result = predict(inputs)
         if result.soc_percent is not None:
