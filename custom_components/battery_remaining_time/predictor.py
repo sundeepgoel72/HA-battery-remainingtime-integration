@@ -141,13 +141,18 @@ def temperature_capacity_factor(temp_c: float | None) -> float:
 
 
 def resolve_net_power(inputs: BatteryInputs) -> tuple[float | None, str]:
-    """Resolve net power; positive charging, negative discharging."""
+    """Resolve net power; positive charging, negative discharging.
+
+    Signed battery current is preferred because it directly describes charge
+    direction. Charge/discharge power sensors are fallback inputs for systems
+    that do not expose battery current.
+    """
+    if inputs.current is not None and inputs.voltage is not None:
+        return float(inputs.current) * float(inputs.voltage), "current x voltage"
     if inputs.charge_power is not None or inputs.discharge_power is not None:
         charge = max(float(inputs.charge_power or 0.0), 0.0)
         discharge = max(float(inputs.discharge_power or 0.0), 0.0)
-        return charge - discharge, "charge/discharge power"
-    if inputs.current is not None and inputs.voltage is not None:
-        return float(inputs.current) * float(inputs.voltage), "current x voltage"
+        return charge - discharge, "charge/discharge power fallback"
     return None, "missing power/current"
 
 
@@ -232,6 +237,10 @@ def power_flow(inputs: BatteryInputs) -> BatteryPrediction:
         confidence = "medium"
     wh = 0.0
     for p in inputs.history:
+        if p.current is not None and p.voltage is not None:
+            current_power = p.current * p.voltage
+            wh += current_power * (inputs.charge_efficiency if current_power > 0 else 1.0) * p.dt_hours
+            continue
         charge = max(p.charge_power or 0, 0)
         discharge = max(p.discharge_power or 0, 0)
         if charge or discharge:
@@ -244,174 +253,3 @@ def power_flow(inputs: BatteryInputs) -> BatteryPrediction:
     soc = clamp(soc + (wh / cap) * 100.0, 0, 100)
     tte, ttf = runtime_from_soc(inputs, soc, net)
     return _prediction(ALGORITHM_POWER_FLOW, soc, net, tte, ttf, confidence, f"energy integration; {src}")
-
-
-def peukert_model(inputs: BatteryInputs) -> BatteryPrediction:
-    """Peukert runtime model; SoC comes from OCV/previous, runtime is Peukert adjusted."""
-    soc = inputs.previous_soc_percent if inputs.previous_soc_percent is not None else estimate_soc_ocv(inputs.voltage, inputs.nominal_voltage)
-    net, src = resolve_net_power(inputs)
-    tte, ttf = runtime_from_soc(inputs, soc, net, peukert=True)
-    conf = "medium" if soc is not None and net is not None else "low"
-    return _prediction(ALGORITHM_PEUCKERT, soc, net, tte, ttf, conf, f"Peukert exponent {inputs.peukert_exponent}; {src}")
-
-
-def hybrid_ocv_coulomb(inputs: BatteryInputs) -> BatteryPrediction:
-    """Hybrid OCV + coulomb/power model."""
-    ocv = voltage_ocv(inputs).soc_percent
-    cc = current_flow(inputs).soc_percent if inputs.current is not None or inputs.history else None
-    pf = power_flow(inputs).soc_percent if inputs.charge_power is not None or inputs.discharge_power is not None else None
-    values = [(ocv, 0.35), (cc, 0.40), (pf, 0.25)]
-    weighted = [(v, w) for v, w in values if v is not None]
-    soc = sum(v * w for v, w in weighted) / sum(w for _, w in weighted) if weighted else None
-    net, src = resolve_net_power(inputs)
-    tte, ttf = runtime_from_soc(inputs, soc, net, peukert=True)
-    conf = "high" if len(weighted) >= 2 and net is not None else "medium" if weighted else "low"
-    return _prediction(ALGORITHM_HYBRID_LEAD_ACID, soc, net, tte, ttf, conf, f"weighted OCV/coulomb/power; {src}")
-
-
-def temperature_compensated(inputs: BatteryInputs) -> BatteryPrediction:
-    """Temperature-compensated hybrid model."""
-    base = hybrid_ocv_coulomb(inputs)
-    net, src = resolve_net_power(inputs)
-    tte, ttf = runtime_from_soc(inputs, base.soc_percent, net, peukert=True, temp=True)
-    conf = base.confidence if inputs.temperature is not None else "medium"
-    return _prediction(ALGORITHM_TEMPERATURE, base.soc_percent, net, tte, ttf, conf, f"temperature capacity factor {temperature_capacity_factor(inputs.temperature):.2f}; {src}")
-
-
-def kibam_model(inputs: BatteryInputs) -> BatteryPrediction:
-    """Simplified KiBaM recovery model.
-
-    This approximates available vs bound charge transfer over the configured history.
-    """
-    soc_seed = inputs.previous_soc_percent if inputs.previous_soc_percent is not None else estimate_soc_ocv(inputs.voltage, inputs.nominal_voltage)
-    if soc_seed is None:
-        soc_seed = 50.0
-        confidence = "low"
-    else:
-        confidence = "medium"
-    total_ah = inputs.capacity_ah * soc_seed / 100.0
-    c = clamp(inputs.kibam_c, 0.05, 0.95)
-    y1 = total_ah * c
-    y2 = total_ah * (1 - c)
-    steps = inputs.history or [HistoryPoint(inputs.history_window_minutes / 60.0, current=inputs.current)]
-    for p in steps:
-        dt = max(p.dt_hours, 0)
-        current = p.current
-        if current is None and p.charge_power is not None and p.voltage:
-            current = p.charge_power / p.voltage
-        if current is None and p.discharge_power is not None and p.voltage:
-            current = -p.discharge_power / p.voltage
-        if current is None:
-            continue
-        transfer = inputs.kibam_k * (y2 / max(1 - c, 0.01) - y1 / c) * dt
-        y1 += transfer + (current * dt if current > 0 else current * dt)
-        y2 -= transfer
-        y1 = clamp(y1, 0, inputs.capacity_ah * c)
-        y2 = clamp(y2, 0, inputs.capacity_ah * (1 - c))
-    soc = clamp(((y1 + y2) / max(inputs.capacity_ah, 0.1)) * 100, 0, 100)
-    net, src = resolve_net_power(inputs)
-    tte, ttf = runtime_from_soc(inputs, soc, net, peukert=True, temp=True)
-    return _prediction(ALGORITHM_KIBAM, soc, net, tte, ttf, confidence, f"simplified KiBaM c={c:.2f}, k={inputs.kibam_k}; {src}")
-
-
-def shepherd_model(inputs: BatteryInputs) -> BatteryPrediction:
-    """Simplified Shepherd-style voltage/SOC inversion.
-
-    This is a pragmatic HA-friendly approximation; full parameter fitting is left for
-    adaptive learning.
-    """
-    if inputs.voltage is None:
-        return _prediction(ALGORITHM_SHEPHERD, None, None, None, None, "low", "missing voltage")
-    current = inputs.current or 0.0
-    corrected_v = inputs.voltage + current * inputs.internal_resistance_ohm
-    ocv_soc = estimate_soc_ocv(corrected_v, inputs.nominal_voltage)
-    if ocv_soc is None:
-        soc = None
-    else:
-        # Smooth non-linear correction resembling Shepherd polarization behavior.
-        q = clamp(ocv_soc / 100.0, 0.01, 0.99)
-        polarization = 4.0 * (1.0 / q - 1.0)
-        soc = clamp(ocv_soc - polarization * 0.5, 0, 100)
-    net, src = resolve_net_power(inputs)
-    tte, ttf = runtime_from_soc(inputs, soc, net, peukert=True, temp=True)
-    return _prediction(ALGORITHM_SHEPHERD, soc, net, tte, ttf, "medium" if soc is not None else "low", f"Shepherd voltage inversion; {src}")
-
-
-def adaptive_hybrid(inputs: BatteryInputs) -> BatteryPrediction:
-    """Adaptive hybrid placeholder using available history-derived corrections.
-
-    v0.1 is deterministic and dependency-free; future versions can persist learned
-    capacity/Peukert/efficiency in hass.storage.
-    """
-    hybrid = temperature_compensated(inputs)
-    soc = hybrid.soc_percent
-    if soc is not None and inputs.history:
-        recent_voltages = [p.voltage for p in inputs.history if p.voltage is not None]
-        if len(recent_voltages) >= 3:
-            slope = recent_voltages[-1] - recent_voltages[0]
-            soc = clamp(soc + (slope * 12.0 / max(inputs.nominal_voltage, 1.0)) * 5.0, 0, 100)
-    net, src = resolve_net_power(inputs)
-    tte, ttf = runtime_from_soc(inputs, soc, net, peukert=True, temp=True)
-    conf = "high" if inputs.history and hybrid.confidence != "low" else hybrid.confidence
-    return _prediction(ALGORITHM_ADAPTIVE_HYBRID, soc, net, tte, ttf, conf, f"adaptive deterministic hybrid; {src}")
-
-
-def ensemble_model(inputs: BatteryInputs) -> BatteryPrediction:
-    """Confidence-weighted ensemble of implemented models."""
-    predictions = [
-        voltage_ocv(inputs),
-        current_flow(inputs),
-        power_flow(inputs),
-        peukert_model(inputs),
-        hybrid_ocv_coulomb(inputs),
-        temperature_compensated(inputs),
-        kibam_model(inputs),
-        shepherd_model(inputs),
-        adaptive_hybrid(inputs),
-    ]
-    weights = {"high": 1.0, "medium": 0.55, "low": 0.20}
-    soc_terms = [(p.soc_percent, weights[p.confidence]) for p in predictions if p.soc_percent is not None]
-    soc = sum(v * w for v, w in soc_terms) / sum(w for _, w in soc_terms) if soc_terms else None
-    net, src = resolve_net_power(inputs)
-    tte, ttf = runtime_from_soc(inputs, soc, net, peukert=True, temp=True)
-    conf = "high" if len(soc_terms) >= 4 else "medium" if soc_terms else "low"
-    return _prediction(ALGORITHM_ENSEMBLE, soc, net, tte, ttf, conf, f"ensemble of {len(soc_terms)} models; {src}")
-
-
-def predict(inputs: BatteryInputs) -> BatteryPrediction:
-    """Run selected algorithm."""
-    algorithm = inputs.algorithm
-    if algorithm == ALGORITHM_VOLTAGE_ONLY:
-        return voltage_ocv(inputs)
-    if algorithm == ALGORITHM_CURRENT_FLOW:
-        return current_flow(inputs)
-    if algorithm == ALGORITHM_POWER_FLOW:
-        return power_flow(inputs)
-    if algorithm == ALGORITHM_PEUCKERT:
-        return peukert_model(inputs)
-    if algorithm == ALGORITHM_HYBRID_LEAD_ACID:
-        return hybrid_ocv_coulomb(inputs)
-    if algorithm == ALGORITHM_TEMPERATURE:
-        return temperature_compensated(inputs)
-    if algorithm == ALGORITHM_KIBAM:
-        return kibam_model(inputs)
-    if algorithm == ALGORITHM_SHEPHERD:
-        return shepherd_model(inputs)
-    if algorithm == ALGORITHM_ADAPTIVE_HYBRID:
-        return adaptive_hybrid(inputs)
-    if algorithm == ALGORITHM_ENSEMBLE:
-        return ensemble_model(inputs)
-    return hybrid_ocv_coulomb(inputs)
-
-
-def _prediction(algorithm: str, soc: float | None, net: float | None, tte: float | None, ttf: float | None, confidence: str, reason: str) -> BatteryPrediction:
-    return BatteryPrediction(
-        algorithm=algorithm,
-        soc_percent=safe_round(soc, 1),
-        mode=mode_from_power(net),
-        net_power_w=safe_round(net, 1),
-        time_to_empty_h=safe_round(tte, 2),
-        time_to_full_h=safe_round(ttf, 2),
-        confidence=confidence,
-        reason=reason,
-    )
