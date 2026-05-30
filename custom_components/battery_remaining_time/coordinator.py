@@ -26,6 +26,7 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
 )
+from .events import BatteryEventState, detect_event_state
 from .history import async_get_history_points
 from .predictor import BatteryInputs, BatteryPrediction, predict
 
@@ -49,11 +50,13 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
     """Coordinator that reads source entities and runs selected predictor."""
 
     config_entry: ConfigEntry
+    event_state: BatteryEventState | None
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize coordinator."""
         self.config_entry = entry
         self._last_soc: float | None = None
+        self.event_state = None
         interval = int(entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
         _LOGGER.info("Battery Remaining Time initialized for '%s' with interval=%ss", entry.title, interval)
         super().__init__(
@@ -117,6 +120,10 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             history=history,
         )
         result = predict(inputs)
+        self.event_state = detect_event_state(inputs, result)
+        _LOGGER.debug("Battery event state: state=%s evidence=%s anchor=%s", self.event_state.state, self.event_state.evidence, self.event_state.calibration_anchor)
+        if self.event_state.calibration_anchor:
+            _LOGGER.info("Calibration evidence detected: state=%s evidence=%s", self.event_state.state, self.event_state.evidence)
         if result.soc_percent is not None:
             self._last_soc = result.soc_percent
         else:
