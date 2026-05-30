@@ -42,6 +42,32 @@ def _latest(states: list[Any], when) -> float | None:
     return _float_state(selected or (states[0] if states else None))
 
 
+def _normalize_raw_history(raw: Any, entity_ids: list[str]) -> dict[str, list[Any]]:
+    """Normalize recorder history output to entity_id -> states.
+
+    Home Assistant recorder helpers have returned both dict and list shapes
+    across versions. Supporting both keeps the integration compatible.
+    """
+    if isinstance(raw, dict):
+        return {entity_id: list(raw.get(entity_id, [])) for entity_id in entity_ids}
+    if isinstance(raw, list):
+        normalized: dict[str, list[Any]] = {entity_id: [] for entity_id in entity_ids}
+        for item in raw:
+            if not item:
+                continue
+            if isinstance(item, list):
+                for state in item:
+                    entity_id = getattr(state, "entity_id", None)
+                    if entity_id in normalized:
+                        normalized[entity_id].append(state)
+            else:
+                entity_id = getattr(item, "entity_id", None)
+                if entity_id in normalized:
+                    normalized[entity_id].append(item)
+        return normalized
+    return {entity_id: [] for entity_id in entity_ids}
+
+
 def build_history_points(raw: dict[str, list[Any]], entities: dict[str, str | None]) -> list[HistoryPoint]:
     """Convert recorder state rows into model history points."""
     voltage = raw.get(entities.get("voltage") or "", [])
@@ -97,12 +123,20 @@ async def async_get_history_points(hass: HomeAssistant, entities: dict[str, str 
     _LOGGER.debug("Fetching recorder history for %s over %s minutes", entity_ids, minutes)
 
     def fetch():
-        return get_significant_states(hass, start_time, end_time, entity_ids, False, False)
+        return get_significant_states(
+            hass,
+            start_time,
+            end_time,
+            entity_ids,
+            significant_changes_only=False,
+            minimal_response=False,
+        )
 
     try:
         raw = await hass.async_add_executor_job(fetch)
-    except RuntimeError:
-        _LOGGER.debug("Recorder history fetch failed", exc_info=True)
+    except Exception:
+        _LOGGER.warning("Recorder history fetch failed", exc_info=True)
         return []
 
-    return build_history_points(raw, entities)
+    normalized = _normalize_raw_history(raw, entity_ids)
+    return build_history_points(normalized, entities)
