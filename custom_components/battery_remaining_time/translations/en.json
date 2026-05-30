@@ -1,0 +1,1 @@
+{"entity":{"sensor":{"estimated_soc":{"name":"Estimated SOC"},"time_to_empty":{"name":"Time to empty"},"time_to_full":{"name":"Time to full"},"net_power":{"name":"Net power"},"mode":{"name":"Mode"},"confidence":{"name":"Confidence"},"algorithm":{"name":"Algorithm"}}}}
