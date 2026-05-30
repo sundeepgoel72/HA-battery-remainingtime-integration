@@ -133,6 +133,10 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         _LOGGER.debug("Battery event state: state=%s evidence=%s anchor=%s", self.event_state.state, self.event_state.evidence, self.event_state.calibration_anchor)
         if self.event_state.calibration_anchor:
             _LOGGER.info("Calibration evidence detected: state=%s evidence=%s", self.event_state.state, self.event_state.evidence)
+
+        await self.stats_store.async_record_update(inputs, result, self.event_state)
+        _LOGGER.debug("Persistent stats updated: updates=%s anchors=%s", self.stats_store.stats.update_count, self.stats_store.stats.calibration_anchor_events)
+
         if result.soc_percent is not None:
             self._last_soc = result.soc_percent
         else:
