@@ -29,6 +29,7 @@ from .const import (
 from .events import BatteryEventState, detect_event_state
 from .history import async_get_history_points
 from .predictor import BatteryInputs, BatteryPrediction, predict
+from .storage import BatteryStatsStore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,12 +52,15 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
 
     config_entry: ConfigEntry
     event_state: BatteryEventState | None
+    stats_store: BatteryStatsStore
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize coordinator."""
         self.config_entry = entry
         self._last_soc: float | None = None
+        self._stats_loaded = False
         self.event_state = None
+        self.stats_store = BatteryStatsStore(hass, entry.entry_id)
         interval = int(entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
         _LOGGER.info("Battery Remaining Time initialized for '%s' with interval=%ss", entry.title, interval)
         super().__init__(
@@ -68,6 +72,11 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
 
     async def _async_update_data(self) -> BatteryPrediction:
         """Fetch source states, recorder history, and compute forecast."""
+        if not self._stats_loaded:
+            await self.stats_store.async_load()
+            self._stats_loaded = True
+            _LOGGER.info("Loaded battery statistics: updates=%s anchors=%s", self.stats_store.stats.update_count, self.stats_store.stats.calibration_anchor_events)
+
         data: dict[str, Any] = self.config_entry.data
         selected_algorithm = str(data.get(CONF_ALGORITHM, DEFAULT_ALGORITHM))
         history_window = int(data.get(CONF_HISTORY_WINDOW_MINUTES, DEFAULT_HISTORY_WINDOW_MINUTES))
