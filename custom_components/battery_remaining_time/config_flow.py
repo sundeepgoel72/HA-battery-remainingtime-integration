@@ -60,7 +60,7 @@ class BatteryRemainingTimeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
             return self.async_create_entry(title=user_input[CONF_NAME], data=user_input)
 
-        return self.async_show_form(step_id="user", data_schema=_schema())
+        return self.async_show_form(step_id="user", data_schema=_schema(include_advanced=False))
 
     @staticmethod
     @callback
@@ -82,7 +82,7 @@ class BatteryRemainingTimeOptionsFlow(config_entries.OptionsFlow):
             merged = {**self.config_entry.data, **user_input}
             self.hass.config_entries.async_update_entry(self.config_entry, data=merged)
             return self.async_create_entry(title="", data={})
-        return self.async_show_form(step_id="init", data_schema=_schema(self.config_entry.data))
+        return self.async_show_form(step_id="init", data_schema=_schema(self.config_entry.data, include_advanced=True))
 
 
 def _entity_selector() -> selector.EntitySelector:
@@ -90,31 +90,41 @@ def _entity_selector() -> selector.EntitySelector:
     return selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
 
 
-def _schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
-    """Build setup/options schema."""
+def _schema(defaults: dict[str, Any] | None = None, *, include_advanced: bool = False) -> vol.Schema:
+    """Build setup/options schema.
+
+    Initial setup asks only for the core battery inputs. Power sensors and
+    temperature are optional advanced/fallback settings available from Options.
+    """
     defaults = defaults or {}
-    return vol.Schema(
-        {
-            vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, "Lead Acid Battery")): str,
-            vol.Required(CONF_ALGORITHM, default=defaults.get(CONF_ALGORITHM, DEFAULT_ALGORITHM)): selector.SelectSelector(
-                selector.SelectSelectorConfig(options=ALGORITHM_OPTIONS)
-            ),
-            vol.Required(CONF_BATTERY_CAPACITY_AH, default=defaults.get(CONF_BATTERY_CAPACITY_AH, 150.0)): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=5000, step=1, mode=selector.NumberSelectorMode.BOX)
-            ),
-            vol.Required(CONF_NOMINAL_VOLTAGE, default=defaults.get(CONF_NOMINAL_VOLTAGE, DEFAULT_NOMINAL_VOLTAGE)): selector.SelectSelector(
-                selector.SelectSelectorConfig(options=["12", "24", "48"])
-            ),
-            vol.Required(CONF_VOLTAGE_SENSOR, default=defaults.get(CONF_VOLTAGE_SENSOR)): _entity_selector(),
-            vol.Optional(CONF_CURRENT_SENSOR, default=defaults.get(CONF_CURRENT_SENSOR)): _entity_selector(),
-            vol.Optional(CONF_CHARGE_POWER_SENSOR, default=defaults.get(CONF_CHARGE_POWER_SENSOR)): _entity_selector(),
-            vol.Optional(CONF_DISCHARGE_POWER_SENSOR, default=defaults.get(CONF_DISCHARGE_POWER_SENSOR)): _entity_selector(),
-            vol.Optional(CONF_TEMPERATURE_SENSOR, default=defaults.get(CONF_TEMPERATURE_SENSOR)): _entity_selector(),
-            vol.Required(CONF_HISTORY_WINDOW_MINUTES, default=defaults.get(CONF_HISTORY_WINDOW_MINUTES, DEFAULT_HISTORY_WINDOW_MINUTES)): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=5, max=10080, step=5, unit_of_measurement="min", mode=selector.NumberSelectorMode.BOX)
-            ),
-            vol.Required(CONF_UPDATE_INTERVAL, default=defaults.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=10, max=3600, step=10, unit_of_measurement="s", mode=selector.NumberSelectorMode.BOX)
-            ),
-        }
-    )
+    fields: dict[Any, Any] = {
+        vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, "Lead Acid Battery")): str,
+        vol.Required(CONF_ALGORITHM, default=defaults.get(CONF_ALGORITHM, DEFAULT_ALGORITHM)): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=ALGORITHM_OPTIONS)
+        ),
+        vol.Required(CONF_BATTERY_CAPACITY_AH, default=defaults.get(CONF_BATTERY_CAPACITY_AH, 150.0)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=1, max=5000, step=1, mode=selector.NumberSelectorMode.BOX)
+        ),
+        vol.Required(CONF_NOMINAL_VOLTAGE, default=defaults.get(CONF_NOMINAL_VOLTAGE, DEFAULT_NOMINAL_VOLTAGE)): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=["12", "24", "36", "48", "60", "72"])
+        ),
+        vol.Required(CONF_VOLTAGE_SENSOR, default=defaults.get(CONF_VOLTAGE_SENSOR)): _entity_selector(),
+        vol.Optional(CONF_CURRENT_SENSOR, default=defaults.get(CONF_CURRENT_SENSOR)): _entity_selector(),
+        vol.Required(CONF_HISTORY_WINDOW_MINUTES, default=defaults.get(CONF_HISTORY_WINDOW_MINUTES, DEFAULT_HISTORY_WINDOW_MINUTES)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=5, max=10080, step=5, unit_of_measurement="min", mode=selector.NumberSelectorMode.BOX)
+        ),
+        vol.Required(CONF_UPDATE_INTERVAL, default=defaults.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=10, max=3600, step=10, unit_of_measurement="s", mode=selector.NumberSelectorMode.BOX)
+        ),
+    }
+
+    if include_advanced:
+        fields.update(
+            {
+                vol.Optional(CONF_CHARGE_POWER_SENSOR, default=defaults.get(CONF_CHARGE_POWER_SENSOR)): _entity_selector(),
+                vol.Optional(CONF_DISCHARGE_POWER_SENSOR, default=defaults.get(CONF_DISCHARGE_POWER_SENSOR)): _entity_selector(),
+                vol.Optional(CONF_TEMPERATURE_SENSOR, default=defaults.get(CONF_TEMPERATURE_SENSOR)): _entity_selector(),
+            }
+        )
+
+    return vol.Schema(fields)
