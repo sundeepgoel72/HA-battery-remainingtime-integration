@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import logging
 from typing import Any
 
 from homeassistant.components.recorder.history import get_significant_states
@@ -11,8 +12,11 @@ from homeassistant.util import dt as dt_util
 
 from .predictor import HistoryPoint
 
+_LOGGER = logging.getLogger(__name__)
+
 
 def _float_state(state: Any | None) -> float | None:
+    """Return a numeric state value when possible."""
     if state is None or state.state in {"unknown", "unavailable"}:
         return None
     try:
@@ -22,10 +26,12 @@ def _float_state(state: Any | None) -> float | None:
 
 
 def _time(state: Any):
+    """Return the best timestamp available on a state object."""
     return getattr(state, "last_updated", None) or getattr(state, "last_changed", None)
 
 
 def _latest(states: list[Any], when) -> float | None:
+    """Return latest value at or before a timestamp."""
     selected = None
     for state in states:
         stamp = _time(state)
@@ -37,6 +43,7 @@ def _latest(states: list[Any], when) -> float | None:
 
 
 def build_history_points(raw: dict[str, list[Any]], entities: dict[str, str | None]) -> list[HistoryPoint]:
+    """Convert recorder state rows into model history points."""
     voltage = raw.get(entities.get("voltage") or "", [])
     current = raw.get(entities.get("current") or "", [])
     charge = raw.get(entities.get("charge_power") or "", [])
@@ -44,7 +51,17 @@ def build_history_points(raw: dict[str, list[Any]], entities: dict[str, str | No
     temp = raw.get(entities.get("temperature") or "", [])
 
     stamps = sorted({_time(s) for states in raw.values() for s in states if _time(s) is not None})
+    _LOGGER.debug(
+        "Recorder raw state counts: voltage=%s current=%s charge=%s discharge=%s temperature=%s timestamps=%s",
+        len(voltage),
+        len(current),
+        len(charge),
+        len(discharge),
+        len(temp),
+        len(stamps),
+    )
     if len(stamps) < 2:
+        _LOGGER.debug("Not enough recorder timestamps to build history points")
         return []
 
     points: list[HistoryPoint] = []
@@ -64,16 +81,20 @@ def build_history_points(raw: dict[str, list[Any]], entities: dict[str, str | No
                 temperature=_latest(temp, stamp),
             )
         )
+    _LOGGER.debug("Built %s battery history points from recorder", len(points))
     return points
 
 
 async def async_get_history_points(hass: HomeAssistant, entities: dict[str, str | None], minutes: int) -> list[HistoryPoint]:
+    """Fetch recent recorder history and convert it into HistoryPoint objects."""
     entity_ids = [entity_id for entity_id in entities.values() if entity_id]
     if not entity_ids or minutes <= 0:
+        _LOGGER.debug("Skipping recorder history fetch: entity_ids=%s minutes=%s", entity_ids, minutes)
         return []
 
     end_time = dt_util.utcnow()
     start_time = end_time - timedelta(minutes=minutes)
+    _LOGGER.debug("Fetching recorder history for %s over %s minutes", entity_ids, minutes)
 
     def fetch():
         return get_significant_states(hass, start_time, end_time, entity_ids, False, False)
@@ -81,6 +102,7 @@ async def async_get_history_points(hass: HomeAssistant, entities: dict[str, str 
     try:
         raw = await hass.async_add_executor_job(fetch)
     except RuntimeError:
+        _LOGGER.debug("Recorder history fetch failed", exc_info=True)
         return []
 
     return build_history_points(raw, entities)
