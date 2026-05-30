@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import ATTR_ALGORITHM, ATTR_CONFIDENCE, ATTR_HISTORY_WINDOW_MINUTES, ATTR_MODE, ATTR_REASON, ATTR_SOC_PERCENT, DOMAIN
+from .const import ATTR_ALGORITHM, ATTR_CONFIDENCE, ATTR_HISTORY_WINDOW_MINUTES, ATTR_MODE, ATTR_REASON, ATTR_SOC_PERCENT, CONF_HISTORY_WINDOW_MINUTES, DOMAIN
 from .coordinator import BatteryRemainingTimeCoordinator
 from .predictor import BatteryPrediction
 
@@ -57,28 +57,19 @@ SENSORS: tuple[BatterySensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data.net_power_w,
     ),
-    BatterySensorDescription(
-        key="mode",
-        translation_key="mode",
-        value_fn=lambda data: data.mode,
-    ),
-    BatterySensorDescription(
-        key="confidence",
-        translation_key="confidence",
-        value_fn=lambda data: data.confidence,
-    ),
-    BatterySensorDescription(
-        key="algorithm",
-        translation_key="algorithm",
-        value_fn=lambda data: data.algorithm,
-    ),
+    BatterySensorDescription(key="mode", translation_key="mode", value_fn=lambda data: data.mode),
+    BatterySensorDescription(key="confidence", translation_key="confidence", value_fn=lambda data: data.confidence),
+    BatterySensorDescription(key="algorithm", translation_key="algorithm", value_fn=lambda data: data.algorithm),
 )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up Battery Remaining Time sensors."""
     coordinator: BatteryRemainingTimeCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(BatteryRemainingTimeSensor(coordinator, entry, description) for description in SENSORS)
+    entities: list[SensorEntity] = [BatteryRemainingTimeSensor(coordinator, entry, description) for description in SENSORS]
+    entities.append(BatteryPredictionHealthSensor(coordinator, entry))
+    entities.append(BatteryCalibrationStatusSensor(coordinator, entry))
+    async_add_entities(entities)
 
 
 class BatteryRemainingTimeSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
@@ -92,12 +83,7 @@ class BatteryRemainingTimeSensor(CoordinatorEntity[BatteryRemainingTimeCoordinat
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": entry.title,
-            "manufacturer": "Sundeep Goel",
-            "model": "Lead Acid Forecast Engine",
-        }
+        self._attr_device_info = _device_info(entry)
 
     @property
     def native_value(self) -> Any:
@@ -112,12 +98,115 @@ class BatteryRemainingTimeSensor(CoordinatorEntity[BatteryRemainingTimeCoordinat
         data = self.coordinator.data
         if data is None:
             return {}
-        history_window = self.coordinator.config_entry.data.get(ATTR_HISTORY_WINDOW_MINUTES)
+        event_state = self.coordinator.event_state
         return {
             ATTR_ALGORITHM: data.algorithm,
             ATTR_SOC_PERCENT: data.soc_percent,
             ATTR_MODE: data.mode,
             ATTR_CONFIDENCE: data.confidence,
             ATTR_REASON: data.reason,
-            ATTR_HISTORY_WINDOW_MINUTES: history_window,
+            ATTR_HISTORY_WINDOW_MINUTES: self.coordinator.config_entry.data.get(CONF_HISTORY_WINDOW_MINUTES),
+            "event_state": event_state.state if event_state else None,
+            "calibration_anchor": event_state.calibration_anchor if event_state else None,
         }
+
+
+class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
+    """Operational health sensor for prediction quality."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "prediction_health"
+
+    def __init__(self, coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_prediction_health"
+        self._attr_device_info = _device_info(entry)
+
+    @property
+    def native_value(self) -> str | None:
+        data = self.coordinator.data
+        if data is None:
+            return None
+        event_state = self.coordinator.event_state
+        if data.confidence == "low":
+            return "degraded"
+        if event_state is not None and event_state.state == "unknown":
+            return "limited"
+        return "ok"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data
+        if data is None:
+            return {}
+        event_state = self.coordinator.event_state
+        stats = self.coordinator.stats_store.stats
+        return {
+            "algorithm": data.algorithm,
+            "confidence": data.confidence,
+            "mode": data.mode,
+            "event_state": event_state.state if event_state else None,
+            "event_evidence": event_state.evidence if event_state else [],
+            "calibration_anchor": event_state.calibration_anchor if event_state else False,
+            "history_window_minutes": self.coordinator.config_entry.data.get(CONF_HISTORY_WINDOW_MINUTES),
+            "update_count": stats.update_count,
+            "last_seen": stats.last_seen,
+            "reason": data.reason,
+        }
+
+
+class BatteryCalibrationStatusSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
+    """Calibration evidence readiness sensor."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "calibration_status"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_calibration_status"
+        self._attr_device_info = _device_info(entry)
+
+    @property
+    def native_value(self) -> int:
+        stats = self.coordinator.stats_store.stats
+        score = 0
+        score += min(stats.rest_events, 10) * 3
+        score += min(stats.float_events, 10) * 3
+        score += min(stats.absorption_events, 10) * 2
+        score += min(stats.low_battery_events, 5) * 4
+        score += min(stats.calibration_anchor_events, 20)
+        return min(score, 100)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        stats = self.coordinator.stats_store.stats
+        return {
+            "readiness_percent": self.native_value,
+            "update_count": stats.update_count,
+            "calibration_anchor_events": stats.calibration_anchor_events,
+            "rest_events": stats.rest_events,
+            "float_events": stats.float_events,
+            "absorption_events": stats.absorption_events,
+            "low_battery_events": stats.low_battery_events,
+            "heavy_discharge_events": stats.heavy_discharge_events,
+            "lowest_soc_percent": stats.lowest_soc_percent,
+            "highest_soc_percent": stats.highest_soc_percent,
+            "lowest_voltage": stats.lowest_voltage,
+            "highest_voltage": stats.highest_voltage,
+            "highest_charge_current": stats.highest_charge_current,
+            "highest_discharge_current": stats.highest_discharge_current,
+            "first_seen": stats.first_seen,
+            "last_seen": stats.last_seen,
+            "event_counts": stats.event_counts,
+        }
+
+
+def _device_info(entry: ConfigEntry) -> dict[str, Any]:
+    return {
+        "identifiers": {(DOMAIN, entry.entry_id)},
+        "name": entry.title,
+        "manufacturer": "Sundeep Goel",
+        "model": "Lead Acid Forecast Engine",
+    }
