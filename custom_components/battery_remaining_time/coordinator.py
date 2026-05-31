@@ -139,6 +139,7 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             history_window_minutes=history_window,
             previous_soc_percent=self._last_soc,
             history=history,
+            model_accuracy=self.stats_store.stats.model_accuracy,
         )
         self.model_predictions = all_model_predictions(inputs)
         self.model_telemetry = {
@@ -149,9 +150,10 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         result = self.model_predictions.get(selected_algorithm) or self.model_predictions[DEFAULT_ALGORITHM]
 
         _LOGGER.debug(
-            "Model comparison: spread=%s outputs=%s",
+            "Model comparison: spread=%s outputs=%s accuracy=%s",
             self.algorithm_spread,
             {algorithm: telemetry.get("soc_percent") for algorithm, telemetry in self.model_telemetry.items()},
+            self.stats_store.stats.model_accuracy,
         )
 
         self.event_state = detect_event_state(inputs, result)
@@ -159,8 +161,8 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         if self.event_state.calibration_anchor:
             _LOGGER.info("Calibration evidence detected: state=%s evidence=%s", self.event_state.state, self.event_state.evidence)
 
-        await self.stats_store.async_record_update(inputs, result, self.event_state)
-        _LOGGER.debug("Persistent stats updated: updates=%s anchors=%s", self.stats_store.stats.update_count, self.stats_store.stats.calibration_anchor_events)
+        await self.stats_store.async_record_update(inputs, result, self.event_state, self.model_predictions)
+        _LOGGER.debug("Persistent stats updated: updates=%s anchors=%s model_accuracy=%s", self.stats_store.stats.update_count, self.stats_store.stats.calibration_anchor_events, self.stats_store.stats.model_accuracy)
 
         if result.soc_percent is not None:
             self._last_soc = result.soc_percent
