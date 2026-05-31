@@ -12,7 +12,23 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import ATTR_ALGORITHM, ATTR_CONFIDENCE, ATTR_HISTORY_WINDOW_MINUTES, ATTR_MODE, ATTR_REASON, ATTR_SOC_PERCENT, CONF_HISTORY_WINDOW_MINUTES, DOMAIN
+from .const import (
+    ATTR_ALGORITHM,
+    ATTR_BATTERY_BRAND_MODEL,
+    ATTR_BATTERY_TYPE,
+    ATTR_CONFIDENCE,
+    ATTR_HISTORY_WINDOW_MINUTES,
+    ATTR_MODE,
+    ATTR_REASON,
+    ATTR_SOC_PERCENT,
+    BATTERY_TYPE_LABELS,
+    CONF_BATTERY_BRAND_MODEL,
+    CONF_BATTERY_TYPE,
+    CONF_HISTORY_WINDOW_MINUTES,
+    DEFAULT_BATTERY_BRAND_MODEL,
+    DEFAULT_BATTERY_TYPE,
+    DOMAIN,
+)
 from .coordinator import BatteryRemainingTimeCoordinator
 from .predictor import BatteryPrediction
 
@@ -72,6 +88,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async_add_entities(entities)
 
 
+def _battery_profile_attrs(entry: ConfigEntry) -> dict[str, Any]:
+    """Return configured battery identity/profile attributes."""
+    battery_type = entry.data.get(CONF_BATTERY_TYPE, DEFAULT_BATTERY_TYPE)
+    return {
+        ATTR_BATTERY_TYPE: battery_type,
+        "battery_type_label": BATTERY_TYPE_LABELS.get(battery_type, str(battery_type)),
+        ATTR_BATTERY_BRAND_MODEL: entry.data.get(CONF_BATTERY_BRAND_MODEL, DEFAULT_BATTERY_BRAND_MODEL),
+    }
+
+
 class BatteryRemainingTimeSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
     """Battery remaining time sensor."""
 
@@ -82,6 +108,7 @@ class BatteryRemainingTimeSensor(CoordinatorEntity[BatteryRemainingTimeCoordinat
         """Initialize sensor."""
         super().__init__(coordinator)
         self.entity_description = description
+        self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
         self._attr_device_info = _device_info(entry)
 
@@ -106,6 +133,7 @@ class BatteryRemainingTimeSensor(CoordinatorEntity[BatteryRemainingTimeCoordinat
             ATTR_CONFIDENCE: data.confidence,
             ATTR_REASON: data.reason,
             ATTR_HISTORY_WINDOW_MINUTES: self.coordinator.config_entry.data.get(CONF_HISTORY_WINDOW_MINUTES),
+            **_battery_profile_attrs(self._entry),
             "event_state": event_state.state if event_state else None,
             "calibration_anchor": event_state.calibration_anchor if event_state else None,
         }
@@ -119,6 +147,7 @@ class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordi
 
     def __init__(self, coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
+        self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_prediction_health"
         self._attr_device_info = _device_info(entry)
 
@@ -145,6 +174,7 @@ class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordi
             "algorithm": data.algorithm,
             "confidence": data.confidence,
             "mode": data.mode,
+            **_battery_profile_attrs(self._entry),
             "event_state": event_state.state if event_state else None,
             "event_evidence": event_state.evidence if event_state else [],
             "calibration_anchor": event_state.calibration_anchor if event_state else False,
@@ -165,6 +195,7 @@ class BatteryCalibrationStatusSensor(CoordinatorEntity[BatteryRemainingTimeCoord
 
     def __init__(self, coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
+        self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_calibration_status"
         self._attr_device_info = _device_info(entry)
 
@@ -184,6 +215,7 @@ class BatteryCalibrationStatusSensor(CoordinatorEntity[BatteryRemainingTimeCoord
         stats = self.coordinator.stats_store.stats
         return {
             "readiness_percent": self.native_value,
+            **_battery_profile_attrs(self._entry),
             "update_count": stats.update_count,
             "calibration_anchor_events": stats.calibration_anchor_events,
             "rest_events": stats.rest_events,
@@ -204,9 +236,15 @@ class BatteryCalibrationStatusSensor(CoordinatorEntity[BatteryRemainingTimeCoord
 
 
 def _device_info(entry: ConfigEntry) -> dict[str, Any]:
+    data = entry.data
+    battery_type = data.get(CONF_BATTERY_TYPE, DEFAULT_BATTERY_TYPE)
+    battery_model = data.get(CONF_BATTERY_BRAND_MODEL, DEFAULT_BATTERY_BRAND_MODEL)
+    model = BATTERY_TYPE_LABELS.get(battery_type, "Lead Acid")
+    if battery_model:
+        model = f"{model} - {battery_model}"
     return {
         "identifiers": {(DOMAIN, entry.entry_id)},
         "name": entry.title,
         "manufacturer": "Sundeep Goel",
-        "model": "Lead Acid Forecast Engine",
+        "model": model,
     }
