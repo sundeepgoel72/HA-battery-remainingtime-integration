@@ -17,8 +17,12 @@ from .const import (
     ALGORITHM_HYBRID_LEAD_ACID,
     ALGORITHM_POWER_FLOW,
     ALGORITHM_VOLTAGE_ONLY,
+    BATTERY_TYPE_LABELS,
+    BATTERY_TYPES,
     CONF_ALGORITHM,
+    CONF_BATTERY_BRAND_MODEL,
     CONF_BATTERY_CAPACITY_AH,
+    CONF_BATTERY_TYPE,
     CONF_CHARGE_POWER_SENSOR,
     CONF_CURRENT_SENSOR,
     CONF_DISCHARGE_POWER_SENSOR,
@@ -28,6 +32,8 @@ from .const import (
     CONF_UPDATE_INTERVAL,
     CONF_VOLTAGE_SENSOR,
     DEFAULT_ALGORITHM,
+    DEFAULT_BATTERY_BRAND_MODEL,
+    DEFAULT_BATTERY_TYPE,
     DEFAULT_HISTORY_WINDOW_MINUTES,
     DEFAULT_NOMINAL_VOLTAGE,
     DEFAULT_UPDATE_INTERVAL,
@@ -45,6 +51,11 @@ ALGORITHM_OPTIONS = [
     "shepherd",
     ALGORITHM_ADAPTIVE_HYBRID,
     "ensemble",
+]
+
+BATTERY_TYPE_OPTIONS = [
+    {"value": battery_type, "label": BATTERY_TYPE_LABELS[battery_type]}
+    for battery_type in BATTERY_TYPES
 ]
 
 
@@ -104,6 +115,10 @@ def _schema(defaults: dict[str, Any] | None = None, *, include_advanced: bool = 
         vol.Required(CONF_ALGORITHM, default=defaults.get(CONF_ALGORITHM, DEFAULT_ALGORITHM)): selector.SelectSelector(
             selector.SelectSelectorConfig(options=ALGORITHM_OPTIONS)
         ),
+        vol.Required(CONF_BATTERY_TYPE, default=defaults.get(CONF_BATTERY_TYPE, DEFAULT_BATTERY_TYPE)): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=BATTERY_TYPE_OPTIONS, mode=selector.SelectSelectorMode.DROPDOWN)
+        ),
+        vol.Optional(CONF_BATTERY_BRAND_MODEL, default=defaults.get(CONF_BATTERY_BRAND_MODEL, DEFAULT_BATTERY_BRAND_MODEL)): str,
         vol.Required(CONF_BATTERY_CAPACITY_AH, default=defaults.get(CONF_BATTERY_CAPACITY_AH, 150.0)): selector.NumberSelector(
             selector.NumberSelectorConfig(min=1, max=5000, step=1, mode=selector.NumberSelectorMode.BOX)
         ),
