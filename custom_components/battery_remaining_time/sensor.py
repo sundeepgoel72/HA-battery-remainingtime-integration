@@ -43,6 +43,7 @@ EXPECTED_CYCLE_LIFE_BY_TYPE = {
     "lead_carbon": 2000.0,
     "custom": DEFAULT_EXPECTED_CYCLE_LIFE,
 }
+
 MODEL_SOC_SENSOR_KEYS = (
     "voltage_only",
     "current_flow",
@@ -55,6 +56,41 @@ MODEL_SOC_SENSOR_KEYS = (
     "adaptive_hybrid",
     "ensemble",
 )
+
+SENSOR_NAMES = {
+    "estimated_soc": "Estimated SOC",
+    "time_to_empty": "Time to empty",
+    "time_to_full": "Time to full",
+    "net_power": "Net power",
+    "mode": "Mode",
+    "confidence": "Confidence",
+    "algorithm": "Algorithm",
+    "battery_health": "Battery health",
+    "battery_useful_life": "Battery useful life",
+    "equivalent_cycles": "Equivalent cycles",
+    "health_confidence": "Health confidence",
+    "learned_capacity": "Learned capacity",
+    "capacity_retention": "Capacity retention",
+    "capacity_confidence": "Capacity confidence",
+    "remaining_cycles": "Remaining cycles",
+    "remaining_life": "Remaining life",
+    "algorithm_spread": "Algorithm spread",
+    "prediction_health": "Prediction health",
+    "calibration_status": "Calibration status",
+}
+
+MODEL_SENSOR_NAMES = {
+    "voltage_only": "SOC voltage only",
+    "current_flow": "SOC current flow",
+    "power_flow": "SOC power flow",
+    "peukert": "SOC Peukert",
+    "hybrid_lead_acid": "SOC hybrid lead acid",
+    "temperature_compensated": "SOC temperature compensated",
+    "kibam": "SOC KiBaM",
+    "shepherd": "SOC Shepherd",
+    "adaptive_hybrid": "SOC adaptive hybrid",
+    "ensemble": "SOC ensemble",
+}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -74,7 +110,7 @@ class BatteryStatsSensorDescription(SensorEntityDescription):
 SENSORS: tuple[BatterySensorDescription, ...] = (
     BatterySensorDescription(
         key="estimated_soc",
-        translation_key="estimated_soc",
+        name=SENSOR_NAMES["estimated_soc"],
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -82,7 +118,7 @@ SENSORS: tuple[BatterySensorDescription, ...] = (
     ),
     BatterySensorDescription(
         key="time_to_empty",
-        translation_key="time_to_empty",
+        name=SENSOR_NAMES["time_to_empty"],
         native_unit_of_measurement=UnitOfTime.HOURS,
         device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.MEASUREMENT,
@@ -90,7 +126,7 @@ SENSORS: tuple[BatterySensorDescription, ...] = (
     ),
     BatterySensorDescription(
         key="time_to_full",
-        translation_key="time_to_full",
+        name=SENSOR_NAMES["time_to_full"],
         native_unit_of_measurement=UnitOfTime.HOURS,
         device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.MEASUREMENT,
@@ -98,73 +134,73 @@ SENSORS: tuple[BatterySensorDescription, ...] = (
     ),
     BatterySensorDescription(
         key="net_power",
-        translation_key="net_power",
+        name=SENSOR_NAMES["net_power"],
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data.net_power_w,
     ),
-    BatterySensorDescription(key="mode", translation_key="mode", value_fn=lambda data: data.mode),
-    BatterySensorDescription(key="confidence", translation_key="confidence", value_fn=lambda data: data.confidence),
-    BatterySensorDescription(key="algorithm", translation_key="algorithm", value_fn=lambda data: data.algorithm),
+    BatterySensorDescription(key="mode", name=SENSOR_NAMES["mode"], value_fn=lambda data: data.mode),
+    BatterySensorDescription(key="confidence", name=SENSOR_NAMES["confidence"], value_fn=lambda data: data.confidence),
+    BatterySensorDescription(key="algorithm", name=SENSOR_NAMES["algorithm"], value_fn=lambda data: data.algorithm),
 )
 
 HEALTH_SENSORS: tuple[BatteryStatsSensorDescription, ...] = (
     BatteryStatsSensorDescription(
         key="battery_health",
-        translation_key="battery_health",
+        name=SENSOR_NAMES["battery_health"],
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda stats: stats.battery_health_percent,
     ),
     BatteryStatsSensorDescription(
         key="battery_useful_life",
-        translation_key="battery_useful_life",
+        name=SENSOR_NAMES["battery_useful_life"],
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda stats: stats.useful_life_percent,
     ),
     BatteryStatsSensorDescription(
         key="equivalent_cycles",
-        translation_key="equivalent_cycles",
+        name=SENSOR_NAMES["equivalent_cycles"],
         native_unit_of_measurement=UNIT_CYCLES,
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_fn=lambda stats: round(stats.estimated_cycle_equivalents, 3),
     ),
     BatteryStatsSensorDescription(
         key="health_confidence",
-        translation_key="health_confidence",
+        name=SENSOR_NAMES["health_confidence"],
         value_fn=lambda stats: stats.health_confidence,
     ),
     BatteryStatsSensorDescription(
         key="learned_capacity",
-        translation_key="learned_capacity",
+        name=SENSOR_NAMES["learned_capacity"],
         native_unit_of_measurement=UNIT_AMPERE_HOUR,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda stats: stats.learned_capacity_ah,
     ),
     BatteryStatsSensorDescription(
         key="capacity_retention",
-        translation_key="capacity_retention",
+        name=SENSOR_NAMES["capacity_retention"],
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda stats: stats.capacity_retention_percent,
     ),
     BatteryStatsSensorDescription(
         key="capacity_confidence",
-        translation_key="capacity_confidence",
+        name=SENSOR_NAMES["capacity_confidence"],
         value_fn=lambda stats: stats.capacity_confidence,
     ),
     BatteryStatsSensorDescription(
         key="remaining_cycles",
-        translation_key="remaining_cycles",
+        name=SENSOR_NAMES["remaining_cycles"],
         native_unit_of_measurement=UNIT_CYCLES,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda stats: None,
     ),
     BatteryStatsSensorDescription(
         key="remaining_life",
-        translation_key="remaining_life",
+        name=SENSOR_NAMES["remaining_life"],
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda stats: None,
@@ -223,10 +259,7 @@ def _remaining_life_percent(coordinator: BatteryRemainingTimeCoordinator, entry:
 
 def _model_summary(coordinator: BatteryRemainingTimeCoordinator) -> dict[str, float | str | None]:
     """Return compact per-model SOC telemetry for entity attributes."""
-    return {
-        algorithm: telemetry.get("soc_percent")
-        for algorithm, telemetry in coordinator.model_telemetry.items()
-    }
+    return {algorithm: telemetry.get("soc_percent") for algorithm, telemetry in coordinator.model_telemetry.items()}
 
 
 def _health_attrs(coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry) -> dict[str, Any]:
@@ -258,13 +291,14 @@ class BatteryRemainingTimeSensor(CoordinatorEntity[BatteryRemainingTimeCoordinat
     """Battery remaining time sensor."""
 
     entity_description: BatterySensorDescription
-    _attr_has_entity_name = True
+    _attr_has_entity_name = False
 
     def __init__(self, coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry, description: BatterySensorDescription) -> None:
         """Initialize sensor."""
         super().__init__(coordinator)
         self.entity_description = description
         self._entry = entry
+        self._attr_name = str(description.name or description.key)
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
         self._attr_device_info = _device_info(entry)
 
@@ -300,12 +334,13 @@ class BatteryStatsSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], Sen
     """Learned battery health/statistics sensor."""
 
     entity_description: BatteryStatsSensorDescription
-    _attr_has_entity_name = True
+    _attr_has_entity_name = False
 
     def __init__(self, coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry, description: BatteryStatsSensorDescription) -> None:
         super().__init__(coordinator)
         self.entity_description = description
         self._entry = entry
+        self._attr_name = str(description.name or description.key)
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
         self._attr_device_info = _device_info(entry)
 
@@ -331,7 +366,7 @@ class BatteryStatsSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], Sen
 class BatteryModelSocSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
     """Dedicated per-model SOC comparison sensor."""
 
-    _attr_has_entity_name = True
+    _attr_has_entity_name = False
     _attr_entity_registry_enabled_default = False
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -341,7 +376,7 @@ class BatteryModelSocSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], 
         super().__init__(coordinator)
         self._entry = entry
         self._model_key = model_key
-        self._attr_translation_key = f"soc_{model_key}"
+        self._attr_name = MODEL_SENSOR_NAMES.get(model_key, f"SOC {model_key}")
         self._attr_unique_id = f"{entry.entry_id}_soc_{model_key}"
         self._attr_device_info = _device_info(entry)
 
@@ -366,8 +401,8 @@ class BatteryModelSocSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], 
 class BatteryAlgorithmSpreadSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
     """Dedicated algorithm divergence/spread sensor."""
 
-    _attr_has_entity_name = True
-    _attr_translation_key = "algorithm_spread"
+    _attr_has_entity_name = False
+    _attr_name = SENSOR_NAMES["algorithm_spread"]
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -395,8 +430,8 @@ class BatteryAlgorithmSpreadSensor(CoordinatorEntity[BatteryRemainingTimeCoordin
 class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
     """Operational health sensor for prediction quality."""
 
-    _attr_has_entity_name = True
-    _attr_translation_key = "prediction_health"
+    _attr_has_entity_name = False
+    _attr_name = SENSOR_NAMES["prediction_health"]
 
     def __init__(self, coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
@@ -450,8 +485,8 @@ class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordi
 class BatteryCalibrationStatusSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
     """Calibration evidence readiness sensor."""
 
-    _attr_has_entity_name = True
-    _attr_translation_key = "calibration_status"
+    _attr_has_entity_name = False
+    _attr_name = SENSOR_NAMES["calibration_status"]
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
 
