@@ -98,6 +98,14 @@ def _battery_profile_attrs(entry: ConfigEntry) -> dict[str, Any]:
     }
 
 
+def _model_summary(coordinator: BatteryRemainingTimeCoordinator) -> dict[str, float | str | None]:
+    """Return compact per-model SOC telemetry for entity attributes."""
+    return {
+        algorithm: telemetry.get("soc_percent")
+        for algorithm, telemetry in coordinator.model_telemetry.items()
+    }
+
+
 class BatteryRemainingTimeSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
     """Battery remaining time sensor."""
 
@@ -133,6 +141,7 @@ class BatteryRemainingTimeSensor(CoordinatorEntity[BatteryRemainingTimeCoordinat
             ATTR_CONFIDENCE: data.confidence,
             ATTR_REASON: data.reason,
             ATTR_HISTORY_WINDOW_MINUTES: self.coordinator.config_entry.data.get(CONF_HISTORY_WINDOW_MINUTES),
+            "algorithm_spread": self.coordinator.algorithm_spread,
             **_battery_profile_attrs(self._entry),
             "event_state": event_state.state if event_state else None,
             "calibration_anchor": event_state.calibration_anchor if event_state else None,
@@ -161,6 +170,8 @@ class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordi
             return "degraded"
         if event_state is not None and event_state.state == "unknown":
             return "limited"
+        if self.coordinator.algorithm_spread is not None and self.coordinator.algorithm_spread > 20:
+            return "divergent"
         return "ok"
 
     @property
@@ -174,6 +185,10 @@ class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordi
             "algorithm": data.algorithm,
             "confidence": data.confidence,
             "mode": data.mode,
+            "selected_soc_percent": data.soc_percent,
+            "algorithm_spread": self.coordinator.algorithm_spread,
+            "model_outputs": _model_summary(self.coordinator),
+            "model_telemetry": self.coordinator.model_telemetry,
             **_battery_profile_attrs(self._entry),
             "event_state": event_state.state if event_state else None,
             "event_evidence": event_state.evidence if event_state else [],
@@ -215,6 +230,8 @@ class BatteryCalibrationStatusSensor(CoordinatorEntity[BatteryRemainingTimeCoord
         stats = self.coordinator.stats_store.stats
         return {
             "readiness_percent": self.native_value,
+            "algorithm_spread": self.coordinator.algorithm_spread,
+            "model_outputs": _model_summary(self.coordinator),
             **_battery_profile_attrs(self._entry),
             "update_count": stats.update_count,
             "calibration_anchor_events": stats.calibration_anchor_events,
