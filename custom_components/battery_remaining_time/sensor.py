@@ -32,6 +32,18 @@ from .const import (
 from .coordinator import BatteryRemainingTimeCoordinator
 from .predictor import BatteryPrediction
 
+UNIT_AMPERE_HOUR = "Ah"
+UNIT_CYCLES = "cycles"
+DEFAULT_EXPECTED_CYCLE_LIFE = 1200.0
+EXPECTED_CYCLE_LIFE_BY_TYPE = {
+    "flooded_lead_acid": 800.0,
+    "tubular_lead_acid": 1500.0,
+    "agm": 600.0,
+    "gel": 800.0,
+    "lead_carbon": 2000.0,
+    "custom": DEFAULT_EXPECTED_CYCLE_LIFE,
+}
+
 
 @dataclass(frozen=True, kw_only=True)
 class BatterySensorDescription(SensorEntityDescription):
@@ -103,6 +115,7 @@ HEALTH_SENSORS: tuple[BatteryStatsSensorDescription, ...] = (
     BatteryStatsSensorDescription(
         key="equivalent_cycles",
         translation_key="equivalent_cycles",
+        native_unit_of_measurement=UNIT_CYCLES,
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_fn=lambda stats: round(stats.estimated_cycle_equivalents, 3),
     ),
@@ -110,6 +123,39 @@ HEALTH_SENSORS: tuple[BatteryStatsSensorDescription, ...] = (
         key="health_confidence",
         translation_key="health_confidence",
         value_fn=lambda stats: stats.health_confidence,
+    ),
+    BatteryStatsSensorDescription(
+        key="learned_capacity",
+        translation_key="learned_capacity",
+        native_unit_of_measurement=UNIT_AMPERE_HOUR,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda stats: stats.learned_capacity_ah,
+    ),
+    BatteryStatsSensorDescription(
+        key="capacity_retention",
+        translation_key="capacity_retention",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda stats: stats.capacity_retention_percent,
+    ),
+    BatteryStatsSensorDescription(
+        key="capacity_confidence",
+        translation_key="capacity_confidence",
+        value_fn=lambda stats: stats.capacity_confidence,
+    ),
+    BatteryStatsSensorDescription(
+        key="remaining_cycles",
+        translation_key="remaining_cycles",
+        native_unit_of_measurement=UNIT_CYCLES,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda stats: None,
+    ),
+    BatteryStatsSensorDescription(
+        key="remaining_life",
+        translation_key="remaining_life",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda stats: None,
     ),
 )
 
@@ -134,6 +180,33 @@ def _battery_profile_attrs(entry: ConfigEntry) -> dict[str, Any]:
     }
 
 
+def _expected_cycle_life(entry: ConfigEntry) -> float:
+    """Return default expected cycle life for configured battery type."""
+    battery_type = str(entry.data.get(CONF_BATTERY_TYPE, DEFAULT_BATTERY_TYPE))
+    return EXPECTED_CYCLE_LIFE_BY_TYPE.get(battery_type, DEFAULT_EXPECTED_CYCLE_LIFE)
+
+
+def _remaining_cycles(coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry) -> float | None:
+    """Estimate remaining useful cycle count from configured type and observed equivalent cycles."""
+    stats = coordinator.stats_store.stats
+    expected = _expected_cycle_life(entry)
+    if expected <= 0:
+        return None
+    return round(max(expected - stats.estimated_cycle_equivalents, 0.0), 1)
+
+
+def _remaining_life_percent(coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry) -> float | None:
+    """Estimate remaining useful life percent from cycle life and capacity retention."""
+    stats = coordinator.stats_store.stats
+    expected = _expected_cycle_life(entry)
+    if expected <= 0:
+        return None
+    cycle_life = max(0.0, min(100.0, ((expected - stats.estimated_cycle_equivalents) / expected) * 100.0))
+    if stats.capacity_retention_percent is None:
+        return round(cycle_life, 1)
+    return round(min(cycle_life, stats.capacity_retention_percent), 1)
+
+
 def _model_summary(coordinator: BatteryRemainingTimeCoordinator) -> dict[str, float | str | None]:
     """Return compact per-model SOC telemetry for entity attributes."""
     return {
@@ -142,7 +215,7 @@ def _model_summary(coordinator: BatteryRemainingTimeCoordinator) -> dict[str, fl
     }
 
 
-def _health_attrs(coordinator: BatteryRemainingTimeCoordinator) -> dict[str, Any]:
+def _health_attrs(coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry) -> dict[str, Any]:
     """Return learned battery health attributes."""
     stats = coordinator.stats_store.stats
     return {
@@ -150,9 +223,19 @@ def _health_attrs(coordinator: BatteryRemainingTimeCoordinator) -> dict[str, Any
         "useful_life_percent": stats.useful_life_percent,
         "health_confidence": stats.health_confidence,
         "health_observation_count": stats.health_observation_count,
+        "configured_capacity_ah": stats.configured_capacity_ah,
+        "learned_capacity_ah": stats.learned_capacity_ah,
+        "capacity_retention_percent": stats.capacity_retention_percent,
+        "capacity_confidence": stats.capacity_confidence,
+        "capacity_observation_count": stats.capacity_observation_count,
         "estimated_cycle_equivalents": round(stats.estimated_cycle_equivalents, 3),
+        "expected_cycle_life": _expected_cycle_life(entry),
+        "remaining_cycles": _remaining_cycles(coordinator, entry),
+        "remaining_life_percent": _remaining_life_percent(coordinator, entry),
         "cumulative_discharge_ah": round(stats.cumulative_discharge_ah, 3),
         "cumulative_charge_ah": round(stats.cumulative_charge_ah, 3),
+        "last_capacity_anchor": stats.last_capacity_anchor,
+        "last_capacity_observation": stats.capacity_observations[-1] if stats.capacity_observations else None,
         "last_health_observation": stats.last_health_observation,
     }
 
@@ -215,13 +298,17 @@ class BatteryStatsSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], Sen
     @property
     def native_value(self) -> Any:
         stats = self.coordinator.stats_store.stats
+        if self.entity_description.key == "remaining_cycles":
+            return _remaining_cycles(self.coordinator, self._entry)
+        if self.entity_description.key == "remaining_life":
+            return _remaining_life_percent(self.coordinator, self._entry)
         return self.entity_description.value_fn(stats)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
             **_battery_profile_attrs(self._entry),
-            **_health_attrs(self.coordinator),
+            **_health_attrs(self.coordinator, self._entry),
             "algorithm_spread": self.coordinator.algorithm_spread,
             "model_outputs": _model_summary(self.coordinator),
         }
@@ -269,7 +356,7 @@ class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordi
             "model_outputs": _model_summary(self.coordinator),
             "model_telemetry": self.coordinator.model_telemetry,
             **_battery_profile_attrs(self._entry),
-            **_health_attrs(self.coordinator),
+            **_health_attrs(self.coordinator, self._entry),
             "event_state": event_state.state if event_state else None,
             "event_evidence": event_state.evidence if event_state else [],
             "calibration_anchor": event_state.calibration_anchor if event_state else False,
@@ -313,7 +400,7 @@ class BatteryCalibrationStatusSensor(CoordinatorEntity[BatteryRemainingTimeCoord
             "algorithm_spread": self.coordinator.algorithm_spread,
             "model_outputs": _model_summary(self.coordinator),
             **_battery_profile_attrs(self._entry),
-            **_health_attrs(self.coordinator),
+            **_health_attrs(self.coordinator, self._entry),
             "update_count": stats.update_count,
             "calibration_anchor_events": stats.calibration_anchor_events,
             "rest_events": stats.rest_events,
