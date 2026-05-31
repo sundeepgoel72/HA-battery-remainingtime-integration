@@ -28,7 +28,13 @@ from .const import (
 )
 from .events import BatteryEventState, detect_event_state
 from .history import async_get_history_points
-from .predictor import BatteryInputs, BatteryPrediction, predict
+from .predictor import (
+    BatteryInputs,
+    BatteryPrediction,
+    algorithm_spread,
+    all_model_predictions,
+    prediction_to_telemetry,
+)
 from .storage import BatteryStatsStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,6 +59,9 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
     config_entry: ConfigEntry
     event_state: BatteryEventState | None
     stats_store: BatteryStatsStore
+    model_predictions: dict[str, BatteryPrediction]
+    model_telemetry: dict[str, dict[str, float | str | None]]
+    algorithm_spread: float | None
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize coordinator."""
@@ -60,6 +69,9 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         self._last_soc: float | None = None
         self._stats_loaded = False
         self.event_state = None
+        self.model_predictions = {}
+        self.model_telemetry = {}
+        self.algorithm_spread = None
         self.stats_store = BatteryStatsStore(hass, entry.entry_id)
         interval = int(entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
         _LOGGER.info("Battery Remaining Time initialized for '%s' with interval=%ss", entry.title, interval)
@@ -128,7 +140,20 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             previous_soc_percent=self._last_soc,
             history=history,
         )
-        result = predict(inputs)
+        self.model_predictions = all_model_predictions(inputs)
+        self.model_telemetry = {
+            algorithm: prediction_to_telemetry(prediction)
+            for algorithm, prediction in self.model_predictions.items()
+        }
+        self.algorithm_spread = algorithm_spread(self.model_predictions)
+        result = self.model_predictions.get(selected_algorithm) or self.model_predictions[DEFAULT_ALGORITHM]
+
+        _LOGGER.debug(
+            "Model comparison: spread=%s outputs=%s",
+            self.algorithm_spread,
+            {algorithm: telemetry.get("soc_percent") for algorithm, telemetry in self.model_telemetry.items()},
+        )
+
         self.event_state = detect_event_state(inputs, result)
         _LOGGER.debug("Battery event state: state=%s evidence=%s anchor=%s", self.event_state.state, self.event_state.evidence, self.event_state.calibration_anchor)
         if self.event_state.calibration_anchor:
@@ -146,13 +171,14 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             _LOGGER.warning("Low confidence forecast: algorithm=%s reason=%s", result.algorithm, result.reason)
         else:
             _LOGGER.info(
-                "Forecast updated: algorithm=%s soc=%s%% mode=%s tte=%sh ttf=%sh confidence=%s",
+                "Forecast updated: algorithm=%s soc=%s%% mode=%s tte=%sh ttf=%sh confidence=%s spread=%s",
                 result.algorithm,
                 result.soc_percent,
                 result.mode,
                 result.time_to_empty_h,
                 result.time_to_full_h,
                 result.confidence,
+                self.algorithm_spread,
             )
         _LOGGER.debug("Forecast detail: net_power=%s reason=%s", result.net_power_w, result.reason)
         return result
