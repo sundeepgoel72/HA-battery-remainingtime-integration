@@ -43,6 +43,18 @@ EXPECTED_CYCLE_LIFE_BY_TYPE = {
     "lead_carbon": 2000.0,
     "custom": DEFAULT_EXPECTED_CYCLE_LIFE,
 }
+MODEL_SOC_SENSOR_KEYS = (
+    "voltage_only",
+    "current_flow",
+    "power_flow",
+    "peukert",
+    "hybrid_lead_acid",
+    "temperature_compensated",
+    "kibam",
+    "shepherd",
+    "adaptive_hybrid",
+    "ensemble",
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -165,6 +177,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator: BatteryRemainingTimeCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[SensorEntity] = [BatteryRemainingTimeSensor(coordinator, entry, description) for description in SENSORS]
     entities.extend(BatteryStatsSensor(coordinator, entry, description) for description in HEALTH_SENSORS)
+    entities.extend(BatteryModelSocSensor(coordinator, entry, model_key) for model_key in MODEL_SOC_SENSOR_KEYS)
+    entities.append(BatteryAlgorithmSpreadSensor(coordinator, entry))
     entities.append(BatteryPredictionHealthSensor(coordinator, entry))
     entities.append(BatteryCalibrationStatusSensor(coordinator, entry))
     async_add_entities(entities)
@@ -311,6 +325,69 @@ class BatteryStatsSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], Sen
             **_health_attrs(self.coordinator, self._entry),
             "algorithm_spread": self.coordinator.algorithm_spread,
             "model_outputs": _model_summary(self.coordinator),
+        }
+
+
+class BatteryModelSocSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
+    """Dedicated per-model SOC comparison sensor."""
+
+    _attr_has_entity_name = True
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_device_class = SensorDeviceClass.BATTERY
+
+    def __init__(self, coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry, model_key: str) -> None:
+        super().__init__(coordinator)
+        self._entry = entry
+        self._model_key = model_key
+        self._attr_translation_key = f"soc_{model_key}"
+        self._attr_unique_id = f"{entry.entry_id}_soc_{model_key}"
+        self._attr_device_info = _device_info(entry)
+
+    @property
+    def native_value(self) -> float | str | None:
+        return self.coordinator.model_telemetry.get(self._model_key, {}).get("soc_percent")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        telemetry = self.coordinator.model_telemetry.get(self._model_key, {})
+        selected = self.coordinator.data
+        return {
+            "model": self._model_key,
+            "model_telemetry": telemetry,
+            "algorithm_spread": self.coordinator.algorithm_spread,
+            "selected_algorithm": selected.algorithm if selected else None,
+            "selected_soc_percent": selected.soc_percent if selected else None,
+            **_battery_profile_attrs(self._entry),
+        }
+
+
+class BatteryAlgorithmSpreadSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
+    """Dedicated algorithm divergence/spread sensor."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "algorithm_spread"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_algorithm_spread"
+        self._attr_device_info = _device_info(entry)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.algorithm_spread
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        selected = self.coordinator.data
+        return {
+            "model_outputs": _model_summary(self.coordinator),
+            "selected_algorithm": selected.algorithm if selected else None,
+            "selected_soc_percent": selected.soc_percent if selected else None,
+            **_battery_profile_attrs(self._entry),
         }
 
 
