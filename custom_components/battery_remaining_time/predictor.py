@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from math import isfinite
+from typing import Callable
 
 from .const import (
     ALGORITHM_ADAPTIVE_HYBRID,
@@ -80,6 +81,27 @@ def safe_round(value: float | None, digits: int = 2) -> float | None:
     if value is None or not isfinite(value):
         return None
     return round(value, digits)
+
+
+def prediction_to_telemetry(prediction: BatteryPrediction) -> dict[str, float | str | None]:
+    """Return a compact serializable representation for logs/attributes."""
+    return {
+        "soc_percent": prediction.soc_percent,
+        "mode": prediction.mode,
+        "net_power_w": prediction.net_power_w,
+        "time_to_empty_h": prediction.time_to_empty_h,
+        "time_to_full_h": prediction.time_to_full_h,
+        "confidence": prediction.confidence,
+        "reason": prediction.reason,
+    }
+
+
+def algorithm_spread(predictions: dict[str, BatteryPrediction]) -> float | None:
+    """Return max-min SOC spread across models."""
+    values = [p.soc_percent for p in predictions.values() if p.soc_percent is not None]
+    if len(values) < 2:
+        return None
+    return safe_round(max(values) - min(values), 1)
 
 
 OCV_12V_POINTS: tuple[tuple[float, float], ...] = (
@@ -328,20 +350,28 @@ def adaptive_hybrid(inputs: BatteryInputs) -> BatteryPrediction:
     return _prediction(ALGORITHM_ADAPTIVE_HYBRID, soc, net, tte, ttf, conf, f"adaptive deterministic hybrid; {src}")
 
 
-def ensemble_model(inputs: BatteryInputs) -> BatteryPrediction:
-    predictions = [
-        voltage_ocv(inputs),
-        current_flow(inputs),
-        power_flow(inputs),
-        peukert_model(inputs),
-        hybrid_ocv_coulomb(inputs),
-        temperature_compensated(inputs),
-        kibam_model(inputs),
-        shepherd_model(inputs),
-        adaptive_hybrid(inputs),
-    ]
+BASE_MODEL_FUNCTIONS: tuple[tuple[str, Callable[[BatteryInputs], BatteryPrediction]], ...] = (
+    (ALGORITHM_VOLTAGE_ONLY, voltage_ocv),
+    (ALGORITHM_CURRENT_FLOW, current_flow),
+    (ALGORITHM_POWER_FLOW, power_flow),
+    (ALGORITHM_PEUCKERT, peukert_model),
+    (ALGORITHM_HYBRID_LEAD_ACID, hybrid_ocv_coulomb),
+    (ALGORITHM_TEMPERATURE, temperature_compensated),
+    (ALGORITHM_KIBAM, kibam_model),
+    (ALGORITHM_SHEPHERD, shepherd_model),
+    (ALGORITHM_ADAPTIVE_HYBRID, adaptive_hybrid),
+)
+
+
+def base_model_predictions(inputs: BatteryInputs) -> dict[str, BatteryPrediction]:
+    """Run all non-ensemble models."""
+    return {algorithm: fn(inputs) for algorithm, fn in BASE_MODEL_FUNCTIONS}
+
+
+def ensemble_from_predictions(inputs: BatteryInputs, predictions: dict[str, BatteryPrediction]) -> BatteryPrediction:
+    """Build ensemble result from already-computed model outputs."""
     weights = {"high": 1.0, "medium": 0.55, "low": 0.20}
-    terms = [(p.soc_percent, weights[p.confidence]) for p in predictions if p.soc_percent is not None]
+    terms = [(p.soc_percent, weights[p.confidence]) for p in predictions.values() if p.soc_percent is not None]
     soc = sum(v * w for v, w in terms) / sum(w for _, w in terms) if terms else None
     net, src = resolve_net_power(inputs)
     tte, ttf = runtime_from_soc(inputs, soc, net, peukert=True, temp=True)
@@ -349,29 +379,20 @@ def ensemble_model(inputs: BatteryInputs) -> BatteryPrediction:
     return _prediction(ALGORITHM_ENSEMBLE, soc, net, tte, ttf, conf, f"ensemble of {len(terms)} models; {src}")
 
 
+def all_model_predictions(inputs: BatteryInputs) -> dict[str, BatteryPrediction]:
+    """Run all models, including ensemble, for telemetry and diagnostics."""
+    predictions = base_model_predictions(inputs)
+    predictions[ALGORITHM_ENSEMBLE] = ensemble_from_predictions(inputs, predictions)
+    return predictions
+
+
+def ensemble_model(inputs: BatteryInputs) -> BatteryPrediction:
+    return all_model_predictions(inputs)[ALGORITHM_ENSEMBLE]
+
+
 def predict(inputs: BatteryInputs) -> BatteryPrediction:
-    algorithm = inputs.algorithm
-    if algorithm == ALGORITHM_VOLTAGE_ONLY:
-        return voltage_ocv(inputs)
-    if algorithm == ALGORITHM_CURRENT_FLOW:
-        return current_flow(inputs)
-    if algorithm == ALGORITHM_POWER_FLOW:
-        return power_flow(inputs)
-    if algorithm == ALGORITHM_PEUCKERT:
-        return peukert_model(inputs)
-    if algorithm == ALGORITHM_HYBRID_LEAD_ACID:
-        return hybrid_ocv_coulomb(inputs)
-    if algorithm == ALGORITHM_TEMPERATURE:
-        return temperature_compensated(inputs)
-    if algorithm == ALGORITHM_KIBAM:
-        return kibam_model(inputs)
-    if algorithm == ALGORITHM_SHEPHERD:
-        return shepherd_model(inputs)
-    if algorithm == ALGORITHM_ADAPTIVE_HYBRID:
-        return adaptive_hybrid(inputs)
-    if algorithm == ALGORITHM_ENSEMBLE:
-        return ensemble_model(inputs)
-    return hybrid_ocv_coulomb(inputs)
+    predictions = all_model_predictions(inputs)
+    return predictions.get(inputs.algorithm) or predictions[ALGORITHM_HYBRID_LEAD_ACID]
 
 
 def _prediction(
