@@ -332,6 +332,7 @@ class BatteryModelSocSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], 
     """Dedicated per-model SOC comparison sensor."""
 
     _attr_has_entity_name = True
+    _attr_entity_registry_enabled_default = False
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_device_class = SensorDeviceClass.BATTERY
@@ -432,6 +433,8 @@ class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordi
             "algorithm_spread": self.coordinator.algorithm_spread,
             "model_outputs": _model_summary(self.coordinator),
             "model_telemetry": self.coordinator.model_telemetry,
+            "model_accuracy": stats.model_accuracy,
+            "model_error_stats": stats.model_error_stats,
             **_battery_profile_attrs(self._entry),
             **_health_attrs(self.coordinator, self._entry),
             "event_state": event_state.state if event_state else None,
@@ -476,6 +479,7 @@ class BatteryCalibrationStatusSensor(CoordinatorEntity[BatteryRemainingTimeCoord
             "readiness_percent": self.native_value,
             "algorithm_spread": self.coordinator.algorithm_spread,
             "model_outputs": _model_summary(self.coordinator),
+            "model_accuracy": stats.model_accuracy,
             **_battery_profile_attrs(self._entry),
             **_health_attrs(self.coordinator, self._entry),
             "update_count": stats.update_count,
