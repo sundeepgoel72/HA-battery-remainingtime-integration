@@ -40,6 +40,13 @@ class BatterySensorDescription(SensorEntityDescription):
     value_fn: Callable[[BatteryPrediction], Any]
 
 
+@dataclass(frozen=True, kw_only=True)
+class BatteryStatsSensorDescription(SensorEntityDescription):
+    """Battery learned statistics sensor description."""
+
+    value_fn: Callable[[Any], Any]
+
+
 SENSORS: tuple[BatterySensorDescription, ...] = (
     BatterySensorDescription(
         key="estimated_soc",
@@ -78,11 +85,40 @@ SENSORS: tuple[BatterySensorDescription, ...] = (
     BatterySensorDescription(key="algorithm", translation_key="algorithm", value_fn=lambda data: data.algorithm),
 )
 
+HEALTH_SENSORS: tuple[BatteryStatsSensorDescription, ...] = (
+    BatteryStatsSensorDescription(
+        key="battery_health",
+        translation_key="battery_health",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda stats: stats.battery_health_percent,
+    ),
+    BatteryStatsSensorDescription(
+        key="battery_useful_life",
+        translation_key="battery_useful_life",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda stats: stats.useful_life_percent,
+    ),
+    BatteryStatsSensorDescription(
+        key="equivalent_cycles",
+        translation_key="equivalent_cycles",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_fn=lambda stats: round(stats.estimated_cycle_equivalents, 3),
+    ),
+    BatteryStatsSensorDescription(
+        key="health_confidence",
+        translation_key="health_confidence",
+        value_fn=lambda stats: stats.health_confidence,
+    ),
+)
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up Battery Remaining Time sensors."""
     coordinator: BatteryRemainingTimeCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[SensorEntity] = [BatteryRemainingTimeSensor(coordinator, entry, description) for description in SENSORS]
+    entities.extend(BatteryStatsSensor(coordinator, entry, description) for description in HEALTH_SENSORS)
     entities.append(BatteryPredictionHealthSensor(coordinator, entry))
     entities.append(BatteryCalibrationStatusSensor(coordinator, entry))
     async_add_entities(entities)
@@ -103,6 +139,21 @@ def _model_summary(coordinator: BatteryRemainingTimeCoordinator) -> dict[str, fl
     return {
         algorithm: telemetry.get("soc_percent")
         for algorithm, telemetry in coordinator.model_telemetry.items()
+    }
+
+
+def _health_attrs(coordinator: BatteryRemainingTimeCoordinator) -> dict[str, Any]:
+    """Return learned battery health attributes."""
+    stats = coordinator.stats_store.stats
+    return {
+        "battery_health_percent": stats.battery_health_percent,
+        "useful_life_percent": stats.useful_life_percent,
+        "health_confidence": stats.health_confidence,
+        "health_observation_count": stats.health_observation_count,
+        "estimated_cycle_equivalents": round(stats.estimated_cycle_equivalents, 3),
+        "cumulative_discharge_ah": round(stats.cumulative_discharge_ah, 3),
+        "cumulative_charge_ah": round(stats.cumulative_charge_ah, 3),
+        "last_health_observation": stats.last_health_observation,
     }
 
 
@@ -148,6 +199,34 @@ class BatteryRemainingTimeSensor(CoordinatorEntity[BatteryRemainingTimeCoordinat
         }
 
 
+class BatteryStatsSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
+    """Learned battery health/statistics sensor."""
+
+    entity_description: BatteryStatsSensorDescription
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry, description: BatteryStatsSensorDescription) -> None:
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+        self._attr_device_info = _device_info(entry)
+
+    @property
+    def native_value(self) -> Any:
+        stats = self.coordinator.stats_store.stats
+        return self.entity_description.value_fn(stats)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            **_battery_profile_attrs(self._entry),
+            **_health_attrs(self.coordinator),
+            "algorithm_spread": self.coordinator.algorithm_spread,
+            "model_outputs": _model_summary(self.coordinator),
+        }
+
+
 class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
     """Operational health sensor for prediction quality."""
 
@@ -190,6 +269,7 @@ class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordi
             "model_outputs": _model_summary(self.coordinator),
             "model_telemetry": self.coordinator.model_telemetry,
             **_battery_profile_attrs(self._entry),
+            **_health_attrs(self.coordinator),
             "event_state": event_state.state if event_state else None,
             "event_evidence": event_state.evidence if event_state else [],
             "calibration_anchor": event_state.calibration_anchor if event_state else False,
@@ -233,6 +313,7 @@ class BatteryCalibrationStatusSensor(CoordinatorEntity[BatteryRemainingTimeCoord
             "algorithm_spread": self.coordinator.algorithm_spread,
             "model_outputs": _model_summary(self.coordinator),
             **_battery_profile_attrs(self._entry),
+            **_health_attrs(self.coordinator),
             "update_count": stats.update_count,
             "calibration_anchor_events": stats.calibration_anchor_events,
             "rest_events": stats.rest_events,
