@@ -16,6 +16,7 @@ STORAGE_KEY = "battery_remaining_time"
 STORAGE_VERSION = 1
 MAX_HEALTH_OBSERVATIONS = 200
 MAX_CAPACITY_OBSERVATIONS = 100
+MAX_MODEL_PERFORMANCE_OBSERVATIONS = 200
 
 
 @dataclass(slots=True)
@@ -41,8 +42,6 @@ class BatteryStats:
     highest_discharge_current: float | None = None
     event_counts: dict[str, int] = field(default_factory=dict)
 
-    # Learned health / useful remaining life indicators. These are evidence-based
-    # diagnostics, not lab-grade capacity certification.
     battery_health_percent: float | None = None
     useful_life_percent: float | None = None
     health_confidence: str = "low"
@@ -53,9 +52,6 @@ class BatteryStats:
     last_health_observation: dict[str, Any] = field(default_factory=dict)
     recent_health_observations: list[dict[str, Any]] = field(default_factory=list)
 
-    # Capacity learning. Learned capacity is derived from anchor-to-anchor Ah
-    # observations rather than set directly so bad samples can be inspected and
-    # future algorithm changes can rebuild the result.
     configured_capacity_ah: float | None = None
     learned_capacity_ah: float | None = None
     capacity_retention_percent: float | None = None
@@ -63,6 +59,10 @@ class BatteryStats:
     capacity_observation_count: int = 0
     capacity_observations: list[dict[str, Any]] = field(default_factory=list)
     last_capacity_anchor: dict[str, Any] = field(default_factory=dict)
+
+    model_error_stats: dict[str, dict[str, float | int]] = field(default_factory=dict)
+    model_accuracy: dict[str, float] = field(default_factory=dict)
+    model_performance_observations: list[dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "BatteryStats":
@@ -97,6 +97,7 @@ class BatteryStatsStore:
         inputs: BatteryInputs,
         prediction: BatteryPrediction,
         event_state: BatteryEventState | None,
+        model_predictions: dict[str, BatteryPrediction] | None = None,
     ) -> None:
         """Record one forecast cycle."""
         now = datetime.now(timezone.utc).isoformat()
@@ -125,6 +126,7 @@ class BatteryStatsStore:
 
         self._record_health_observation(now, inputs, prediction, event_state)
         self._record_capacity_observation(now, inputs, prediction, event_state)
+        self._record_model_performance(now, prediction, event_state, model_predictions)
 
         if event_state is not None:
             self.stats.event_counts[event_state.state] = self.stats.event_counts.get(event_state.state, 0) + 1
@@ -150,11 +152,7 @@ class BatteryStatsStore:
         prediction: BatteryPrediction,
         event_state: BatteryEventState | None,
     ) -> None:
-        """Update learned health indicators from observed operating shape.
-
-        This intentionally starts conservative. True remaining life requires many
-        charge/discharge cycles. Until those are observed, confidence remains low.
-        """
+        """Update learned health indicators from observed operating shape."""
         discharge_ah = 0.0
         charge_ah = 0.0
         discharge_wh = 0.0
@@ -327,6 +325,47 @@ class BatteryStatsStore:
         self.stats.capacity_observations = self.stats.capacity_observations[-MAX_CAPACITY_OBSERVATIONS:]
         self.stats.capacity_observation_count += 1
         self._recompute_learned_capacity(inputs.capacity_ah)
+
+    def _record_model_performance(
+        self,
+        now: str,
+        prediction: BatteryPrediction,
+        event_state: BatteryEventState | None,
+        model_predictions: dict[str, BatteryPrediction] | None,
+    ) -> None:
+        """Update model accuracy statistics at calibration anchors."""
+        if not model_predictions or event_state is None or not event_state.calibration_anchor or prediction.soc_percent is None:
+            return
+
+        reference_soc = prediction.soc_percent
+        observation_models: dict[str, dict[str, float | None]] = {}
+        for model, model_prediction in model_predictions.items():
+            if model_prediction.soc_percent is None:
+                continue
+            error = abs(model_prediction.soc_percent - reference_soc)
+            stats = self.stats.model_error_stats.setdefault(model, {"count": 0, "mean_abs_error": 0.0, "last_error": 0.0})
+            count = int(stats.get("count", 0)) + 1
+            old_mean = float(stats.get("mean_abs_error", 0.0))
+            new_mean = old_mean + (error - old_mean) / count
+            stats["count"] = count
+            stats["mean_abs_error"] = round(new_mean, 3)
+            stats["last_error"] = round(error, 3)
+            self.stats.model_accuracy[model] = round(_clamp(1.0 - (new_mean / 50.0), 0.05, 1.0), 3)
+            observation_models[model] = {
+                "soc_percent": model_prediction.soc_percent,
+                "abs_error": round(error, 3),
+            }
+
+        if observation_models:
+            self.stats.model_performance_observations.append(
+                {
+                    "timestamp": now,
+                    "event_state": event_state.state,
+                    "reference_soc": reference_soc,
+                    "models": observation_models,
+                }
+            )
+            self.stats.model_performance_observations = self.stats.model_performance_observations[-MAX_MODEL_PERFORMANCE_OBSERVATIONS:]
 
     def _recompute_learned_capacity(self, configured_capacity_ah: float) -> None:
         """Recompute learned capacity from retained observations."""
