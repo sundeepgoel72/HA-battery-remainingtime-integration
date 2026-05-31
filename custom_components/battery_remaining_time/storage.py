@@ -15,6 +15,7 @@ from .predictor import BatteryInputs, BatteryPrediction
 STORAGE_KEY = "battery_remaining_time"
 STORAGE_VERSION = 1
 MAX_HEALTH_OBSERVATIONS = 200
+MAX_CAPACITY_OBSERVATIONS = 100
 
 
 @dataclass(slots=True)
@@ -51,6 +52,17 @@ class BatteryStats:
     cumulative_charge_ah: float = 0.0
     last_health_observation: dict[str, Any] = field(default_factory=dict)
     recent_health_observations: list[dict[str, Any]] = field(default_factory=list)
+
+    # Capacity learning. Learned capacity is derived from anchor-to-anchor Ah
+    # observations rather than set directly so bad samples can be inspected and
+    # future algorithm changes can rebuild the result.
+    configured_capacity_ah: float | None = None
+    learned_capacity_ah: float | None = None
+    capacity_retention_percent: float | None = None
+    capacity_confidence: str = "low"
+    capacity_observation_count: int = 0
+    capacity_observations: list[dict[str, Any]] = field(default_factory=list)
+    last_capacity_anchor: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "BatteryStats":
@@ -92,6 +104,7 @@ class BatteryStatsStore:
             self.stats.first_seen = now
         self.stats.last_seen = now
         self.stats.update_count += 1
+        self.stats.configured_capacity_ah = round(inputs.capacity_ah, 3)
 
         if prediction.soc_percent is not None:
             self.stats.lowest_soc_percent = _min_optional(self.stats.lowest_soc_percent, prediction.soc_percent)
@@ -111,6 +124,7 @@ class BatteryStatsStore:
                 self.stats.highest_discharge_current = _max_optional(self.stats.highest_discharge_current, abs(inputs.current))
 
         self._record_health_observation(now, inputs, prediction, event_state)
+        self._record_capacity_observation(now, inputs, prediction, event_state)
 
         if event_state is not None:
             self.stats.event_counts[event_state.state] = self.stats.event_counts.get(event_state.state, 0) + 1
@@ -201,6 +215,8 @@ class BatteryStatsStore:
         stress_score += min(max(self.stats.estimated_cycle_equivalents - 50.0, 0.0) * 0.05, 10.0)
 
         health = 100.0 - stress_score
+        if self.stats.capacity_retention_percent is not None:
+            health = min(health, self.stats.capacity_retention_percent)
         if voltage_samples < 20 and current_samples < 5:
             health = min(health, 95.0)
         health = _clamp(health, 0.0, 100.0)
@@ -210,6 +226,10 @@ class BatteryStatsStore:
             confidence = "medium"
         if self.stats.estimated_cycle_equivalents >= 20 and self.stats.low_battery_events > 0 and self.stats.calibration_anchor_events >= 50:
             confidence = "high"
+        if self.stats.capacity_confidence == "high":
+            confidence = "high"
+        elif self.stats.capacity_confidence == "medium" and confidence == "low":
+            confidence = "medium"
 
         observation = {
             "timestamp": now,
@@ -238,6 +258,104 @@ class BatteryStatsStore:
         self.stats.last_health_observation = observation
         self.stats.recent_health_observations.append(observation)
         self.stats.recent_health_observations = self.stats.recent_health_observations[-MAX_HEALTH_OBSERVATIONS:]
+
+    def _record_capacity_observation(
+        self,
+        now: str,
+        inputs: BatteryInputs,
+        prediction: BatteryPrediction,
+        event_state: BatteryEventState | None,
+    ) -> None:
+        """Learn usable capacity from anchor-to-anchor charge/discharge evidence."""
+        if event_state is None or not event_state.calibration_anchor or prediction.soc_percent is None:
+            return
+
+        anchor = {
+            "timestamp": now,
+            "soc_percent": prediction.soc_percent,
+            "voltage": inputs.voltage,
+            "current": inputs.current,
+            "event_state": event_state.state,
+            "cumulative_discharge_ah": self.stats.cumulative_discharge_ah,
+            "cumulative_charge_ah": self.stats.cumulative_charge_ah,
+        }
+
+        previous = self.stats.last_capacity_anchor
+        self.stats.last_capacity_anchor = anchor
+        if not previous:
+            return
+
+        try:
+            previous_soc = float(previous.get("soc_percent"))
+            previous_discharge_ah = float(previous.get("cumulative_discharge_ah", 0.0))
+            previous_charge_ah = float(previous.get("cumulative_charge_ah", 0.0))
+        except (TypeError, ValueError):
+            return
+
+        soc_delta = previous_soc - prediction.soc_percent
+        discharged_ah = self.stats.cumulative_discharge_ah - previous_discharge_ah
+        charged_ah = self.stats.cumulative_charge_ah - previous_charge_ah
+        if soc_delta < 5.0 or discharged_ah <= 0:
+            return
+
+        estimated_capacity = discharged_ah / max(soc_delta / 100.0, 0.01)
+        if estimated_capacity <= 0:
+            return
+
+        lower_bound = inputs.capacity_ah * 0.35
+        upper_bound = inputs.capacity_ah * 1.20
+        if not lower_bound <= estimated_capacity <= upper_bound:
+            return
+
+        confidence = "low"
+        if soc_delta >= 10.0 and discharged_ah >= inputs.capacity_ah * 0.05:
+            confidence = "medium"
+        if soc_delta >= 25.0 and discharged_ah >= inputs.capacity_ah * 0.15:
+            confidence = "high"
+
+        observation = {
+            "timestamp": now,
+            "start_anchor": previous,
+            "end_anchor": anchor,
+            "soc_delta_percent": round(soc_delta, 2),
+            "discharged_ah": round(discharged_ah, 3),
+            "charged_ah": round(charged_ah, 3),
+            "estimated_capacity_ah": round(estimated_capacity, 2),
+            "confidence": confidence,
+        }
+        self.stats.capacity_observations.append(observation)
+        self.stats.capacity_observations = self.stats.capacity_observations[-MAX_CAPACITY_OBSERVATIONS:]
+        self.stats.capacity_observation_count += 1
+        self._recompute_learned_capacity(inputs.capacity_ah)
+
+    def _recompute_learned_capacity(self, configured_capacity_ah: float) -> None:
+        """Recompute learned capacity from retained observations."""
+        observations = self.stats.capacity_observations
+        if not observations:
+            return
+        weights = {"low": 0.25, "medium": 0.65, "high": 1.0}
+        weighted_sum = 0.0
+        total_weight = 0.0
+        for observation in observations:
+            capacity = observation.get("estimated_capacity_ah")
+            try:
+                capacity_f = float(capacity)
+            except (TypeError, ValueError):
+                continue
+            weight = weights.get(str(observation.get("confidence", "low")), 0.25)
+            weighted_sum += capacity_f * weight
+            total_weight += weight
+        if total_weight <= 0:
+            return
+        learned_capacity = weighted_sum / total_weight
+        self.stats.learned_capacity_ah = round(learned_capacity, 2)
+        self.stats.capacity_retention_percent = round(_clamp((learned_capacity / max(configured_capacity_ah, 0.1)) * 100.0, 0.0, 120.0), 1)
+        if len(observations) >= 5 and any(obs.get("confidence") == "high" for obs in observations):
+            self.stats.capacity_confidence = "high"
+        elif len(observations) >= 2 or any(obs.get("confidence") == "medium" for obs in observations):
+            self.stats.capacity_confidence = "medium"
+        else:
+            self.stats.capacity_confidence = "low"
 
 
 def _min_optional(current: float | None, value: float) -> float:
