@@ -57,6 +57,7 @@ class BatteryInputs:
     kibam_k: float = 0.15
     previous_soc_percent: float | None = None
     history: list[HistoryPoint] = field(default_factory=list)
+    model_accuracy: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -369,14 +370,35 @@ def base_model_predictions(inputs: BatteryInputs) -> dict[str, BatteryPrediction
 
 
 def ensemble_from_predictions(inputs: BatteryInputs, predictions: dict[str, BatteryPrediction]) -> BatteryPrediction:
-    """Build ensemble result from already-computed model outputs."""
-    weights = {"high": 1.0, "medium": 0.55, "low": 0.20}
-    terms = [(p.soc_percent, weights[p.confidence]) for p in predictions.values() if p.soc_percent is not None]
+    """Build ensemble result from already-computed model outputs.
+
+    Confidence remains the primary weight. Learned model accuracy is applied as a
+    conservative modifier once calibration-anchor evidence exists.
+    """
+    confidence_weights = {"high": 1.0, "medium": 0.55, "low": 0.20}
+    terms: list[tuple[float, float]] = []
+    learned_used = False
+    for algorithm, prediction in predictions.items():
+        if prediction.soc_percent is None:
+            continue
+        confidence_weight = confidence_weights[prediction.confidence]
+        learned_accuracy = inputs.model_accuracy.get(algorithm)
+        if learned_accuracy is not None:
+            learned_used = True
+            accuracy_weight = clamp(float(learned_accuracy), 0.05, 1.0)
+            # Conservative blend: 70% old behaviour, 30% learned performance.
+            final_weight = confidence_weight * ((0.70) + (0.30 * accuracy_weight))
+        else:
+            final_weight = confidence_weight
+        terms.append((prediction.soc_percent, final_weight))
     soc = sum(v * w for v, w in terms) / sum(w for _, w in terms) if terms else None
     net, src = resolve_net_power(inputs)
     tte, ttf = runtime_from_soc(inputs, soc, net, peukert=True, temp=True)
     conf = "high" if len(terms) >= 4 else "medium" if terms else "low"
-    return _prediction(ALGORITHM_ENSEMBLE, soc, net, tte, ttf, conf, f"ensemble of {len(terms)} models; {src}")
+    reason = f"ensemble of {len(terms)} models; {src}"
+    if learned_used:
+        reason += "; adaptive accuracy weighting"
+    return _prediction(ALGORITHM_ENSEMBLE, soc, net, tte, ttf, conf, reason)
 
 
 def all_model_predictions(inputs: BatteryInputs) -> dict[str, BatteryPrediction]:
