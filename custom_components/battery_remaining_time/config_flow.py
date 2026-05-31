@@ -74,15 +74,17 @@ class BatteryRemainingTimeOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        # Home Assistant 2026 exposes config_entry as a read-only property on
+        # OptionsFlow. Keep our own reference instead of assigning to it.
+        self._config_entry = config_entry
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         """Manage options."""
         if user_input is not None:
-            merged = {**self.config_entry.data, **user_input}
-            self.hass.config_entries.async_update_entry(self.config_entry, data=merged)
+            merged = {**self._config_entry.data, **user_input}
+            self.hass.config_entries.async_update_entry(self._config_entry, data=merged)
             return self.async_create_entry(title="", data={})
-        return self.async_show_form(step_id="init", data_schema=_schema(self.config_entry.data, include_advanced=True))
+        return self.async_show_form(step_id="init", data_schema=_schema(self._config_entry.data, include_advanced=True))
 
 
 def _entity_selector() -> selector.EntitySelector:
