@@ -6,6 +6,7 @@ from datetime import timedelta
 import logging
 from typing import Any
 
+from homeassistant.components import recorder
 from homeassistant.components.recorder.history import get_significant_states
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -133,7 +134,8 @@ async def async_get_history_points(hass: HomeAssistant, entities: dict[str, str 
         )
 
     try:
-        raw = await hass.async_add_executor_job(fetch)
+        recorder_instance = recorder.get_instance(hass)
+        raw = await recorder_instance.async_add_executor_job(fetch)
     except Exception:
         _LOGGER.warning("Recorder history fetch failed", exc_info=True)
         return []
