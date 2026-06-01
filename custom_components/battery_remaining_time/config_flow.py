@@ -25,6 +25,7 @@ from .const import (
     CONF_BATTERY_TYPE,
     CONF_CHARGE_POWER_SENSOR,
     CONF_CURRENT_SENSOR,
+    CONF_DEPLETION_VOLTAGE,
     CONF_DISCHARGE_POWER_SENSOR,
     CONF_HISTORY_WINDOW_MINUTES,
     CONF_NOMINAL_VOLTAGE,
@@ -34,6 +35,7 @@ from .const import (
     DEFAULT_ALGORITHM,
     DEFAULT_BATTERY_BRAND_MODEL,
     DEFAULT_BATTERY_TYPE,
+    DEFAULT_DEPLETION_VOLTAGE_FACTOR,
     DEFAULT_HISTORY_WINDOW_MINUTES,
     DEFAULT_NOMINAL_VOLTAGE,
     DEFAULT_UPDATE_INTERVAL,
@@ -57,6 +59,14 @@ BATTERY_TYPE_OPTIONS = [
     {"value": battery_type, "label": BATTERY_TYPE_LABELS[battery_type]}
     for battery_type in BATTERY_TYPES
 ]
+
+
+def _default_depletion_voltage(defaults: dict[str, Any]) -> float:
+    """Return configured or nominal-derived depletion voltage."""
+    if defaults.get(CONF_DEPLETION_VOLTAGE) not in (None, ""):
+        return float(defaults[CONF_DEPLETION_VOLTAGE])
+    nominal = float(defaults.get(CONF_NOMINAL_VOLTAGE, DEFAULT_NOMINAL_VOLTAGE))
+    return round(nominal * DEFAULT_DEPLETION_VOLTAGE_FACTOR, 2)
 
 
 class BatteryRemainingTimeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -124,6 +134,9 @@ def _schema(defaults: dict[str, Any] | None = None, *, include_advanced: bool = 
         ),
         vol.Required(CONF_NOMINAL_VOLTAGE, default=defaults.get(CONF_NOMINAL_VOLTAGE, DEFAULT_NOMINAL_VOLTAGE)): selector.SelectSelector(
             selector.SelectSelectorConfig(options=["12", "24", "36", "48", "60", "72"])
+        ),
+        vol.Optional(CONF_DEPLETION_VOLTAGE, default=_default_depletion_voltage(defaults)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=1, max=100, step=0.1, unit_of_measurement="V", mode=selector.NumberSelectorMode.BOX)
         ),
         vol.Required(CONF_VOLTAGE_SENSOR, default=defaults.get(CONF_VOLTAGE_SENSOR)): _entity_selector(),
         vol.Optional(CONF_CURRENT_SENSOR, default=defaults.get(CONF_CURRENT_SENSOR)): _entity_selector(),
