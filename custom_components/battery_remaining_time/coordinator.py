@@ -8,7 +8,7 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
     CONF_ALGORITHM,
@@ -31,6 +31,7 @@ from .history import async_get_history_points
 from .predictor import (
     BatteryInputs,
     BatteryPrediction,
+    HistoryPoint,
     algorithm_spread,
     all_model_predictions,
     prediction_to_telemetry,
@@ -51,6 +52,15 @@ def _state_float(hass: HomeAssistant, entity_id: str | None) -> float | None:
         return float(state.state)
     except (TypeError, ValueError):
         return None
+
+
+def _latest_history_value(history: list[HistoryPoint], field: str) -> float | None:
+    """Return the latest non-null value from recorder-derived history."""
+    for point in reversed(history):
+        value = getattr(point, field, None)
+        if value is not None:
+            return float(value)
+    return None
 
 
 class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
@@ -87,7 +97,11 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         if not self._stats_loaded:
             await self.stats_store.async_load()
             self._stats_loaded = True
-            _LOGGER.info("Loaded battery statistics: updates=%s anchors=%s", self.stats_store.stats.update_count, self.stats_store.stats.calibration_anchor_events)
+            _LOGGER.info(
+                "Loaded battery statistics: updates=%s anchors=%s",
+                self.stats_store.stats.update_count,
+                self.stats_store.stats.calibration_anchor_events,
+            )
 
         data: dict[str, Any] = self.config_entry.data
         selected_algorithm = str(data.get(CONF_ALGORITHM, DEFAULT_ALGORITHM))
@@ -111,6 +125,32 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         charge_power = _state_float(self.hass, data.get(CONF_CHARGE_POWER_SENSOR))
         discharge_power = _state_float(self.hass, data.get(CONF_DISCHARGE_POWER_SENSOR))
         temperature = _state_float(self.hass, data.get(CONF_TEMPERATURE_SENSOR))
+
+        # HA can call custom coordinators during startup before ESPHome/MQTT
+        # source entities have restored their current states. Do not allow that
+        # transient unavailability to seed SOC with a bogus 36-50% estimate.
+        if voltage is None:
+            voltage = _latest_history_value(history, "voltage")
+            if voltage is not None:
+                _LOGGER.info("Voltage sensor unavailable; using latest recorder voltage fallback=%s", voltage)
+        if current is None:
+            current = _latest_history_value(history, "current")
+            if current is not None:
+                _LOGGER.info("Current sensor unavailable; using latest recorder current fallback=%s", current)
+        if charge_power is None:
+            charge_power = _latest_history_value(history, "charge_power")
+        if discharge_power is None:
+            discharge_power = _latest_history_value(history, "discharge_power")
+        if temperature is None:
+            temperature = _latest_history_value(history, "temperature")
+
+        no_live_or_history_voltage = voltage is None
+        no_power_evidence = current is None and charge_power is None and discharge_power is None
+        if no_live_or_history_voltage and no_power_evidence:
+            _LOGGER.warning(
+                "Skipping forecast update because source sensors are unavailable and recorder fallback is insufficient"
+            )
+            raise UpdateFailed("Battery source sensors unavailable; keeping previous forecast")
 
         if voltage is None:
             _LOGGER.warning("Voltage sensor is missing or unavailable; SOC estimate may be degraded")
@@ -157,12 +197,22 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         )
 
         self.event_state = detect_event_state(inputs, result)
-        _LOGGER.debug("Battery event state: state=%s evidence=%s anchor=%s", self.event_state.state, self.event_state.evidence, self.event_state.calibration_anchor)
+        _LOGGER.debug(
+            "Battery event state: state=%s evidence=%s anchor=%s",
+            self.event_state.state,
+            self.event_state.evidence,
+            self.event_state.calibration_anchor,
+        )
         if self.event_state.calibration_anchor:
             _LOGGER.info("Calibration evidence detected: state=%s evidence=%s", self.event_state.state, self.event_state.evidence)
 
         await self.stats_store.async_record_update(inputs, result, self.event_state, self.model_predictions)
-        _LOGGER.debug("Persistent stats updated: updates=%s anchors=%s model_accuracy=%s", self.stats_store.stats.update_count, self.stats_store.stats.calibration_anchor_events, self.stats_store.stats.model_accuracy)
+        _LOGGER.debug(
+            "Persistent stats updated: updates=%s anchors=%s model_accuracy=%s",
+            self.stats_store.stats.update_count,
+            self.stats_store.stats.calibration_anchor_events,
+            self.stats_store.stats.model_accuracy,
+        )
 
         if result.soc_percent is not None:
             self._last_soc = result.soc_percent
