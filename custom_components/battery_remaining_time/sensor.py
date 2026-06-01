@@ -35,6 +35,7 @@ from .predictor import BatteryPrediction
 
 UNIT_AMPERE_HOUR = "Ah"
 UNIT_CYCLES = "cycles"
+UNIT_VOLT = "V"
 DEFAULT_EXPECTED_CYCLE_LIFE = 1200.0
 EXPECTED_CYCLE_LIFE_BY_TYPE = {
     "flooded_lead_acid": 800.0,
@@ -73,6 +74,9 @@ SENSOR_NAMES = {
     "learned_capacity": "Learned capacity",
     "capacity_retention": "Capacity retention",
     "capacity_confidence": "Capacity confidence",
+    "learned_full_voltage": "Learned full voltage",
+    "learned_empty_voltage": "Learned empty voltage",
+    "learned_charge_efficiency": "Learned charge efficiency",
     "remaining_cycles": "Remaining cycles",
     "remaining_life": "Remaining life",
     "algorithm_spread": "Algorithm spread",
@@ -191,6 +195,29 @@ HEALTH_SENSORS: tuple[BatteryStatsSensorDescription, ...] = (
         key="capacity_confidence",
         name=SENSOR_NAMES["capacity_confidence"],
         value_fn=lambda stats: stats.capacity_confidence,
+    ),
+    BatteryStatsSensorDescription(
+        key="learned_full_voltage",
+        name=SENSOR_NAMES["learned_full_voltage"],
+        native_unit_of_measurement=UNIT_VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda stats: round(stats.learned_full_voltage, 3) if getattr(stats, "learned_full_voltage", None) is not None else None,
+    ),
+    BatteryStatsSensorDescription(
+        key="learned_empty_voltage",
+        name=SENSOR_NAMES["learned_empty_voltage"],
+        native_unit_of_measurement=UNIT_VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda stats: round(stats.learned_empty_voltage, 3) if getattr(stats, "learned_empty_voltage", None) is not None else None,
+    ),
+    BatteryStatsSensorDescription(
+        key="learned_charge_efficiency",
+        name=SENSOR_NAMES["learned_charge_efficiency"],
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda stats: round(stats.learned_charge_efficiency * 100.0, 1) if getattr(stats, "learned_charge_efficiency", None) is not None else None,
     ),
     BatteryStatsSensorDescription(
         key="remaining_cycles",
