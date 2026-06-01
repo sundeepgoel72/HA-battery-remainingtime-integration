@@ -11,6 +11,7 @@ It estimates state of charge (SOC), time to empty (TTE), time to full (TTF), bat
 - Multiple battery estimation algorithms
 - Calibration evidence collection
 - Persistent statistics
+- Adaptive Peukert exponent learning from real discharge cycles
 - Prediction diagnostics
 - Local-only operation
 - HACS compatible
@@ -28,6 +29,14 @@ Supported:
 ## Diagnostics
 
 Diagnostic entities include prediction_health, calibration_status, algorithm_spread, and the learned battery statistics sensors.
+
+Adaptive Peukert diagnostics:
+
+- learned_peukert_exponent
+- peukert_confidence
+- peukert_observation_count
+
+See [Adaptive Peukert Learning](docs/adaptive-peukert-learning.md) for implementation and usage details.
 
 ## Installation
 

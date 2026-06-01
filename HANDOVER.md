@@ -19,6 +19,9 @@ Recent work completed:
 - Moved mutable options into `entry.options` and added a runtime config merge helper.
 - Added Home Assistant Repairs issue creation for unavailable source sensor evidence.
 - Removed the redundant `comparison.py` helper.
+- Added adaptive Peukert exponent learning from recorder-backed discharge cycles ending at low-battery calibration anchors.
+- Exposed `learned_peukert_exponent`, `peukert_confidence`, and `peukert_observation_count` as diagnostic statistics.
+- Added focused pytest coverage for Peukert low-confidence fallback, medium-confidence learned exponent use, and diagnostic sensor registration.
 
 Validation performed:
 
@@ -62,6 +65,7 @@ Quality and architecture:
 2. Review whether recorder history should preserve a full prediction context window while querying incremental learning windows separately.
 3. Add richer repair guidance for partially degraded sources, such as missing current but available voltage.
 4. Measure recorder query cost with long history windows and short update intervals.
+5. Validate adaptive Peukert learning against real discharge cycles in Home Assistant before treating learned exponent confidence as beta-ready.
 
 Release checklist:
 

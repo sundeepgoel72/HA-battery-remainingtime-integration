@@ -1,0 +1,107 @@
+# Battery Remaining Time - TODO
+
+## Task 2 - Adaptive Peukert Estimation
+
+Implement adaptive Peukert exponent learning from real discharge evidence.
+
+Completed:
+
+- Learn from recorder discharge windows that end at low-battery calibration anchors.
+- Compare observed runtime against Peukert-adjusted predicted runtime.
+- Persist `learned_peukert_exponent`, `peukert_confidence`, and `peukert_observation_count`.
+- Fall back to the default exponent while confidence is low.
+- Feed the learned exponent into existing Peukert-capable algorithms once confidence reaches medium.
+- Expose learned Peukert statistics as diagnostic sensors.
+- Add focused pytest coverage for fallback and trusted learned exponent behavior.
+
+Status: In progress pending real Home Assistant discharge-cycle validation.
+
+## Task 3 - Usable SOC / Depletion Voltage Completion
+
+Complete depletion-voltage feature.
+
+Add:
+
+- `sensor.usable_soc`
+- `sensor.time_to_depletion`
+
+Add diagnostics:
+
+- `configured_depletion_voltage`
+- `learned_depletion_voltage`
+
+Add event state:
+
+- `depletion_imminent`
+
+Preserve existing `estimated_soc` behaviour.
+
+Status: Pending.
+
+## Task 4 - Adaptive Ensemble Weighting
+
+Replace static ensemble weighting with adaptive weighting.
+
+Requirements:
+
+- Use `model_accuracy` statistics.
+- Weight more accurate models higher.
+- Prevent runaway weighting.
+- Keep all models active.
+
+Expose:
+
+- `model_weighting`
+- `ensemble_weights`
+
+Update diagnostics.
+
+This moves the project toward a genuine self-learning predictor.
+
+Status: Pending.
+
+## Task 5 - HACS Beta Hardening
+
+Prepare for public HACS beta.
+
+Review:
+
+- `manifest.json`
+- diagnostics
+- translations
+- entity names
+- unique IDs
+- config flow
+- options flow
+
+Produce:
+
+- README improvements
+- screenshots required
+- beta release checklist
+
+Implement any low-risk fixes.
+
+Status: Pending.
+
+## Task 6 - Test Suite
+
+Create pytest coverage for:
+
+- SOC algorithms
+- ensemble engine
+- calibration engine
+- adaptive learning
+- health calculations
+- depletion voltage
+
+Target:
+
+- >= 80% coverage
+
+Status: Pending.
+
+Progress:
+
+- Added adaptive Peukert learning unit coverage for low-confidence fallback and medium-confidence learned exponent use.
+- Added diagnostic sensor key coverage for Peukert learning statistics.

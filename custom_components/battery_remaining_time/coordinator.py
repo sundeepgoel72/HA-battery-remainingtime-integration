@@ -189,6 +189,7 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             discharge_power=discharge_power,
             temperature=temperature,
             history_window_minutes=history_window,
+            peukert_exponent=self.stats_store.effective_peukert_exponent(),
             previous_soc_percent=self._last_soc,
             history=history,
             model_accuracy=self.stats_store.stats.model_accuracy,

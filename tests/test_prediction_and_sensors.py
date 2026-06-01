@@ -15,6 +15,7 @@ from custom_components.battery_remaining_time.predictor import (
 from custom_components.battery_remaining_time.sensor import (
     DEFAULT_EXPECTED_CYCLE_LIFE,
     EXPECTED_CYCLE_LIFE_BY_TYPE,
+    HEALTH_SENSORS,
     _expected_cycle_life,
 )
 
@@ -52,3 +53,12 @@ def test_expected_cycle_life_defaults_for_unknown_type() -> None:
     entry = SimpleNamespace(data={CONF_BATTERY_TYPE: "unknown"}, options={})
 
     assert _expected_cycle_life(entry) == DEFAULT_EXPECTED_CYCLE_LIFE
+
+
+def test_peukert_learning_stats_are_exposed_as_diagnostic_sensors() -> None:
+    """Learned Peukert statistics should have stable diagnostic sensor keys."""
+    keys = {description.key for description in HEALTH_SENSORS}
+
+    assert "learned_peukert_exponent" in keys
+    assert "peukert_confidence" in keys
+    assert "peukert_observation_count" in keys

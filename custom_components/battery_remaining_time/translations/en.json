@@ -21,6 +21,15 @@
       },
       "algorithm": {
         "name": "Algorithm"
+      },
+      "learned_peukert_exponent": {
+        "name": "Learned Peukert exponent"
+      },
+      "peukert_confidence": {
+        "name": "Peukert confidence"
+      },
+      "peukert_observation_count": {
+        "name": "Peukert observation count"
       }
     }
   },

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from math import isfinite, log
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -11,7 +12,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .events import BatteryEventState
-from .predictor import BatteryInputs, BatteryPrediction, HistoryPoint
+from .predictor import BatteryInputs, BatteryPrediction, HistoryPoint, estimate_soc_ocv, practical_usable_soc
 
 STORAGE_KEY = "battery_remaining_time"
 STORAGE_VERSION = 1
@@ -19,6 +20,10 @@ MAX_HEALTH_OBSERVATIONS = 200
 MAX_CAPACITY_OBSERVATIONS = 100
 MAX_MODEL_PERFORMANCE_OBSERVATIONS = 200
 MAX_ANCHOR_OBSERVATIONS = 200
+MAX_PEUCKERT_OBSERVATIONS = 100
+DEFAULT_PEUCKERT_EXPONENT = 1.20
+MIN_PEUCKERT_EXPONENT = 1.00
+MAX_PEUCKERT_EXPONENT = 1.60
 
 
 @dataclass(slots=True)
@@ -76,6 +81,12 @@ class BatteryStats:
     model_accuracy: dict[str, float] = field(default_factory=dict)
     model_performance_observations: list[dict[str, Any]] = field(default_factory=list)
 
+    learned_peukert_exponent: float | None = None
+    peukert_confidence: str = "low"
+    peukert_observation_count: int = 0
+    peukert_observations: list[dict[str, Any]] = field(default_factory=list)
+    peukert_cycle: dict[str, Any] = field(default_factory=dict)
+
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "BatteryStats":
         """Create stats from stored data."""
@@ -103,6 +114,12 @@ class BatteryStatsStore:
     async def async_save(self) -> None:
         """Persist current stats."""
         await self._store.async_save(self.stats.as_dict())
+
+    def effective_peukert_exponent(self, configured_exponent: float = DEFAULT_PEUCKERT_EXPONENT) -> float:
+        """Return learned Peukert exponent only when enough observations exist."""
+        if self.stats.peukert_confidence == "low" or self.stats.learned_peukert_exponent is None:
+            return configured_exponent
+        return _clamp(self.stats.learned_peukert_exponent, MIN_PEUCKERT_EXPONENT, MAX_PEUCKERT_EXPONENT)
 
     async def async_record_update(
         self,
@@ -138,6 +155,7 @@ class BatteryStatsStore:
 
         new_history_points = _new_history_points(inputs.history, self.stats.last_history_point_timestamp)
         self._record_health_observation(now, inputs, prediction, event_state, new_history_points)
+        self._record_peukert_observation(now, inputs, prediction, event_state, new_history_points)
         self._record_anchor_observation(now, inputs, prediction, event_state)
         self._record_capacity_observation(now, inputs, prediction, event_state)
         self._record_model_performance(now, inputs, event_state, model_predictions)
@@ -275,6 +293,120 @@ class BatteryStatsStore:
         self.stats.last_health_observation = observation
         self.stats.recent_health_observations.append(observation)
         self.stats.recent_health_observations = self.stats.recent_health_observations[-MAX_HEALTH_OBSERVATIONS:]
+
+    def _record_peukert_observation(
+        self,
+        now: str,
+        inputs: BatteryInputs,
+        prediction: BatteryPrediction,
+        event_state: BatteryEventState | None,
+        history_points: list[HistoryPoint],
+    ) -> None:
+        """Learn Peukert exponent from discharge windows ending at low battery."""
+        if inputs.capacity_ah <= 0 or inputs.nominal_voltage <= 0:
+            return
+
+        segment = _discharge_segment(history_points, inputs) if len(history_points) >= 3 else None
+        if segment is not None:
+            self._update_peukert_cycle(segment)
+
+        if event_state is None or not event_state.calibration_anchor or event_state.state != "low_battery":
+            return
+
+        cycle = self.stats.peukert_cycle
+        if not cycle:
+            return
+
+        try:
+            actual_runtime_h = float(cycle.get("runtime_h"))
+            weighted_power_wh = float(cycle.get("weighted_power_wh"))
+            weighted_current_ah = float(cycle.get("weighted_current_ah"))
+            start_voltage = float(cycle.get("start_voltage"))
+        except (TypeError, ValueError):
+            self.stats.peukert_cycle = {}
+            return
+
+        average_power_w = weighted_power_wh / max(actual_runtime_h, 0.001)
+        average_current_a = weighted_current_ah / max(actual_runtime_h, 0.001)
+        if actual_runtime_h < 0.10 or average_power_w <= 1.0 or average_current_a <= 0.0:
+            self.stats.peukert_cycle = {}
+            return
+
+        start_inputs = BatteryInputs(
+            algorithm=inputs.algorithm,
+            capacity_ah=inputs.capacity_ah,
+            nominal_voltage=inputs.nominal_voltage,
+            voltage=start_voltage,
+            current=-average_current_a,
+            discharge_power=average_power_w,
+            temperature=cycle.get("start_temperature") if cycle.get("start_temperature") is not None else inputs.temperature,
+            depletion_voltage=inputs.depletion_voltage,
+            peukert_exponent=DEFAULT_PEUCKERT_EXPONENT,
+        )
+        start_soc = estimate_soc_ocv(start_voltage, inputs.nominal_voltage)
+        usable_soc = practical_usable_soc(start_inputs, start_soc)
+        if usable_soc is None or usable_soc <= 5.0:
+            self.stats.peukert_cycle = {}
+            return
+
+        remaining_wh = inputs.capacity_ah * inputs.nominal_voltage * (usable_soc / 100.0)
+        base_runtime_h = remaining_wh / average_power_w
+        rated_current = max(inputs.capacity_ah / 20.0, 0.1)
+        rate_ratio = rated_current / max(average_current_a, 0.1)
+        if base_runtime_h <= 0 or rate_ratio <= 0 or abs(rate_ratio - 1.0) < 0.05:
+            self.stats.peukert_cycle = {}
+            return
+
+        try:
+            observed_exponent = 1.0 + (log(actual_runtime_h / base_runtime_h) / log(rate_ratio))
+        except (ValueError, ZeroDivisionError):
+            self.stats.peukert_cycle = {}
+            return
+        if not isfinite(observed_exponent):
+            self.stats.peukert_cycle = {}
+            return
+        observed_exponent = _clamp(observed_exponent, MIN_PEUCKERT_EXPONENT, MAX_PEUCKERT_EXPONENT)
+
+        configured_prediction_h = _peukert_runtime_hours(base_runtime_h, rate_ratio, DEFAULT_PEUCKERT_EXPONENT)
+        learned_prediction_h = _peukert_runtime_hours(base_runtime_h, rate_ratio, observed_exponent)
+        observation = {
+            "timestamp": now,
+            "event_state": event_state.state,
+            "start_voltage": round(start_voltage, 4),
+            "start_soc_percent": round(start_soc, 2) if start_soc is not None else None,
+            "usable_soc_percent": round(usable_soc, 2),
+            "actual_runtime_h": round(actual_runtime_h, 3),
+            "configured_prediction_h": round(configured_prediction_h, 3),
+            "learned_prediction_h": round(learned_prediction_h, 3),
+            "average_discharge_power_w": round(average_power_w, 2),
+            "average_discharge_current_a": round(average_current_a, 3),
+            "observed_exponent": round(observed_exponent, 4),
+            "selected_prediction_h": prediction.time_to_depletion_h or prediction.time_to_empty_h,
+        }
+        self.stats.peukert_observations.append(observation)
+        self.stats.peukert_observations = self.stats.peukert_observations[-MAX_PEUCKERT_OBSERVATIONS:]
+        self.stats.peukert_observation_count += 1
+        self.stats.peukert_cycle = {}
+        self._recompute_learned_peukert()
+
+    def _update_peukert_cycle(self, segment: tuple[HistoryPoint, float, float, float]) -> None:
+        """Accumulate an in-progress recorder discharge cycle."""
+        start, runtime_h, average_power_w, average_current_a = segment
+        if start.voltage is None:
+            return
+        cycle = self.stats.peukert_cycle
+        if not cycle:
+            cycle = {
+                "start_voltage": start.voltage,
+                "start_temperature": start.temperature,
+                "runtime_h": 0.0,
+                "weighted_power_wh": 0.0,
+                "weighted_current_ah": 0.0,
+            }
+        cycle["runtime_h"] = float(cycle.get("runtime_h", 0.0)) + runtime_h
+        cycle["weighted_power_wh"] = float(cycle.get("weighted_power_wh", 0.0)) + (average_power_w * runtime_h)
+        cycle["weighted_current_ah"] = float(cycle.get("weighted_current_ah", 0.0)) + (average_current_a * runtime_h)
+        self.stats.peukert_cycle = cycle
 
     def _record_anchor_observation(
         self,
@@ -495,6 +627,43 @@ class BatteryStatsStore:
         else:
             self.stats.capacity_confidence = "low"
 
+    def _recompute_learned_peukert(self) -> None:
+        """Recompute learned Peukert exponent from retained discharge observations."""
+        observations = self.stats.peukert_observations
+        if not observations:
+            return
+
+        weighted_sum = 0.0
+        total_weight = 0.0
+        for observation in observations:
+            try:
+                exponent = float(observation.get("observed_exponent"))
+                actual = float(observation.get("actual_runtime_h"))
+                power = float(observation.get("average_discharge_power_w"))
+            except (TypeError, ValueError):
+                continue
+            if not isfinite(exponent):
+                continue
+            weight = _clamp(actual, 0.25, 4.0) * _clamp(power / 100.0, 0.5, 3.0)
+            weighted_sum += exponent * weight
+            total_weight += weight
+
+        if total_weight <= 0:
+            return
+
+        previous = self.stats.learned_peukert_exponent
+        learned = weighted_sum / total_weight
+        if previous is not None and self.stats.peukert_observation_count > len(observations):
+            learned = (previous * 0.75) + (learned * 0.25)
+        self.stats.learned_peukert_exponent = round(_clamp(learned, MIN_PEUCKERT_EXPONENT, MAX_PEUCKERT_EXPONENT), 4)
+
+        if self.stats.peukert_observation_count >= 8:
+            self.stats.peukert_confidence = "high"
+        elif self.stats.peukert_observation_count >= 3:
+            self.stats.peukert_confidence = "medium"
+        else:
+            self.stats.peukert_confidence = "low"
+
 
 def _reference_soc_from_anchor(inputs: BatteryInputs, event_state: BatteryEventState) -> float | None:
     """Return an anchor-derived reference SOC for model accuracy learning.
@@ -552,6 +721,48 @@ def practical_low_soc_reference(inputs: BatteryInputs) -> float:
         return 0.0
     span = max(inputs.nominal_voltage * (12.8 / 12.0) - inputs.depletion_voltage, 0.1)
     return _clamp(((inputs.voltage - inputs.depletion_voltage) / span) * 20.0, 0.0, 20.0)
+
+
+def _discharge_segment(history_points: list[HistoryPoint], inputs: BatteryInputs) -> tuple[HistoryPoint, float, float, float] | None:
+    """Return a sustained discharge segment as start point, runtime, watts, amps."""
+    discharge_points: list[tuple[HistoryPoint, float, float]] = []
+    for point in history_points:
+        power_w, current_a = _point_discharge_power_current(point, inputs.nominal_voltage)
+        if power_w is None or current_a is None or power_w <= 1.0 or current_a <= 0:
+            if discharge_points:
+                break
+            continue
+        discharge_points.append((point, power_w, current_a))
+
+    if len(discharge_points) < 3:
+        return None
+
+    actual_runtime_h = sum(max(point.dt_hours, 0.0) for point, _, _ in discharge_points)
+    if actual_runtime_h <= 0:
+        return None
+
+    weighted_power = sum(power_w * max(point.dt_hours, 0.0) for point, power_w, _ in discharge_points)
+    weighted_current = sum(current_a * max(point.dt_hours, 0.0) for point, _, current_a in discharge_points)
+    average_power_w = weighted_power / actual_runtime_h
+    average_current_a = weighted_current / actual_runtime_h
+    return discharge_points[0][0], actual_runtime_h, average_power_w, average_current_a
+
+
+def _point_discharge_power_current(point: HistoryPoint, nominal_voltage: float) -> tuple[float | None, float | None]:
+    """Return positive discharge power/current for one history point."""
+    voltage = point.voltage if point.voltage is not None and point.voltage > 0 else nominal_voltage
+    if point.current is not None and point.current < 0:
+        current = abs(point.current)
+        return current * voltage, current
+    if point.discharge_power is not None and point.discharge_power > 0:
+        return point.discharge_power, point.discharge_power / max(voltage, 0.1)
+    return None, None
+
+
+def _peukert_runtime_hours(base_runtime_h: float, rate_ratio: float, exponent: float) -> float:
+    """Return runtime adjusted by Peukert exponent using existing predictor shape."""
+    factor = rate_ratio ** max(exponent - 1.0, 0.0)
+    return base_runtime_h * _clamp(factor, 0.25, 1.2)
 
 
 def _parse_timestamp(value: str | None) -> datetime | None:

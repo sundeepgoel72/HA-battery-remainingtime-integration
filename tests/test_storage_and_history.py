@@ -14,6 +14,7 @@ from custom_components.battery_remaining_time.predictor import (
 from custom_components.battery_remaining_time.storage import (
     BatteryStats,
     BatteryStatsStore,
+    DEFAULT_PEUCKERT_EXPONENT,
     _new_history_points,
 )
 
@@ -65,3 +66,58 @@ def test_model_accuracy_uses_raw_anchor_evidence_not_selected_prediction() -> No
     assert store.stats.model_error_stats["accurate"]["last_error"] == 0.0
     assert store.stats.model_error_stats["biased"]["last_error"] == 50.0
     assert store.stats.model_accuracy["accurate"] > store.stats.model_accuracy["biased"]
+
+
+def test_peukert_learning_stores_observation_but_falls_back_when_confidence_low() -> None:
+    """A single real discharge cycle should not override the configured/default exponent."""
+    store = object.__new__(BatteryStatsStore)
+    store.stats = BatteryStats()
+    inputs = BatteryInputs(
+        algorithm="peukert",
+        capacity_ah=100.0,
+        nominal_voltage=12.0,
+        depletion_voltage=11.8,
+    )
+    event_state = BatteryEventState("low_battery", ["depletion_voltage"], calibration_anchor=True)
+    prediction = BatteryPrediction("peukert", 0.0, "discharging", -120.0, 4.0, None, "medium", "test")
+
+    store._record_peukert_observation("2026-01-01T00:00:00+00:00", inputs, prediction, event_state, _peukert_history())
+
+    assert store.stats.peukert_observation_count == 1
+    assert store.stats.learned_peukert_exponent is not None
+    assert store.stats.peukert_confidence == "low"
+    assert store.effective_peukert_exponent() == DEFAULT_PEUCKERT_EXPONENT
+
+
+def test_peukert_learning_uses_learned_exponent_after_medium_confidence() -> None:
+    """Repeated low-battery discharge observations should become trusted gradually."""
+    store = object.__new__(BatteryStatsStore)
+    store.stats = BatteryStats()
+    inputs = BatteryInputs(
+        algorithm="peukert",
+        capacity_ah=100.0,
+        nominal_voltage=12.0,
+        depletion_voltage=11.8,
+    )
+    event_state = BatteryEventState("low_battery", ["depletion_voltage"], calibration_anchor=True)
+    prediction = BatteryPrediction("peukert", 0.0, "discharging", -120.0, 4.0, None, "medium", "test")
+
+    for index in range(3):
+        store._record_peukert_observation(f"2026-01-01T0{index}:00:00+00:00", inputs, prediction, event_state, _peukert_history())
+
+    assert store.stats.peukert_observation_count == 3
+    assert store.stats.peukert_confidence == "medium"
+    assert store.stats.learned_peukert_exponent is not None
+    assert store.stats.learned_peukert_exponent > DEFAULT_PEUCKERT_EXPONENT
+    assert store.effective_peukert_exponent() == store.stats.learned_peukert_exponent
+
+
+def _peukert_history() -> list[HistoryPoint]:
+    """Return a sustained recorder discharge window ending at low battery."""
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    return [
+        HistoryPoint(1.0, voltage=12.4, current=-10.0, timestamp=start),
+        HistoryPoint(1.0, voltage=12.25, current=-10.0, timestamp=start + timedelta(hours=1)),
+        HistoryPoint(1.0, voltage=12.05, current=-10.0, timestamp=start + timedelta(hours=2)),
+        HistoryPoint(1.0, voltage=11.8, current=-10.0, timestamp=start + timedelta(hours=3)),
+    ]
