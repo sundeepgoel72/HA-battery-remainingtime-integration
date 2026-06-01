@@ -17,6 +17,7 @@ STORAGE_VERSION = 1
 MAX_HEALTH_OBSERVATIONS = 200
 MAX_CAPACITY_OBSERVATIONS = 100
 MAX_MODEL_PERFORMANCE_OBSERVATIONS = 200
+MAX_ANCHOR_OBSERVATIONS = 200
 
 
 @dataclass(slots=True)
@@ -59,6 +60,15 @@ class BatteryStats:
     capacity_observation_count: int = 0
     capacity_observations: list[dict[str, Any]] = field(default_factory=list)
     last_capacity_anchor: dict[str, Any] = field(default_factory=dict)
+
+    learned_full_voltage: float | None = None
+    learned_empty_voltage: float | None = None
+    full_voltage_observation_count: int = 0
+    empty_voltage_observation_count: int = 0
+    learned_charge_efficiency: float | None = None
+    charge_efficiency_confidence: str = "low"
+    charge_efficiency_observation_count: int = 0
+    anchor_observations: list[dict[str, Any]] = field(default_factory=list)
 
     model_error_stats: dict[str, dict[str, float | int]] = field(default_factory=dict)
     model_accuracy: dict[str, float] = field(default_factory=dict)
@@ -125,6 +135,7 @@ class BatteryStatsStore:
                 self.stats.highest_discharge_current = _max_optional(self.stats.highest_discharge_current, abs(inputs.current))
 
         self._record_health_observation(now, inputs, prediction, event_state)
+        self._record_anchor_observation(now, inputs, prediction, event_state)
         self._record_capacity_observation(now, inputs, prediction, event_state)
         self._record_model_performance(now, prediction, event_state, model_predictions)
 
@@ -257,6 +268,74 @@ class BatteryStatsStore:
         self.stats.recent_health_observations.append(observation)
         self.stats.recent_health_observations = self.stats.recent_health_observations[-MAX_HEALTH_OBSERVATIONS:]
 
+    def _record_anchor_observation(
+        self,
+        now: str,
+        inputs: BatteryInputs,
+        prediction: BatteryPrediction,
+        event_state: BatteryEventState | None,
+    ) -> None:
+        """Learn full/empty voltage and charge efficiency from calibration anchors."""
+        if event_state is None or not event_state.calibration_anchor or prediction.soc_percent is None or inputs.voltage is None:
+            return
+
+        anchor = {
+            "timestamp": now,
+            "event_state": event_state.state,
+            "soc_percent": prediction.soc_percent,
+            "voltage": round(inputs.voltage, 4),
+            "current": inputs.current,
+            "cumulative_discharge_ah": round(self.stats.cumulative_discharge_ah, 4),
+            "cumulative_charge_ah": round(self.stats.cumulative_charge_ah, 4),
+        }
+        self.stats.anchor_observations.append(anchor)
+        self.stats.anchor_observations = self.stats.anchor_observations[-MAX_ANCHOR_OBSERVATIONS:]
+
+        if prediction.soc_percent >= 95.0 and event_state.state in {"resting", "float", "absorption"}:
+            self.stats.learned_full_voltage = _running_average(
+                self.stats.learned_full_voltage,
+                inputs.voltage,
+                self.stats.full_voltage_observation_count,
+            )
+            self.stats.full_voltage_observation_count += 1
+        elif prediction.soc_percent <= 25.0 and event_state.state in {"low_battery", "resting"}:
+            self.stats.learned_empty_voltage = _running_average(
+                self.stats.learned_empty_voltage,
+                inputs.voltage,
+                self.stats.empty_voltage_observation_count,
+            )
+            self.stats.empty_voltage_observation_count += 1
+
+        previous = self.stats.last_capacity_anchor
+        if not previous:
+            return
+        try:
+            previous_soc = float(previous.get("soc_percent"))
+            previous_charge_ah = float(previous.get("cumulative_charge_ah", 0.0))
+            previous_discharge_ah = float(previous.get("cumulative_discharge_ah", 0.0))
+        except (TypeError, ValueError):
+            return
+
+        charged_ah = self.stats.cumulative_charge_ah - previous_charge_ah
+        discharged_ah = self.stats.cumulative_discharge_ah - previous_discharge_ah
+        soc_gain = prediction.soc_percent - previous_soc
+        if soc_gain >= 10.0 and charged_ah > 0 and discharged_ah >= 0:
+            retained_ah = max((soc_gain / 100.0) * inputs.capacity_ah + discharged_ah, 0.0)
+            efficiency = _clamp(retained_ah / max(charged_ah, 0.1), 0.50, 1.05)
+            self.stats.learned_charge_efficiency = round(
+                _running_average(
+                    self.stats.learned_charge_efficiency,
+                    efficiency,
+                    self.stats.charge_efficiency_observation_count,
+                ),
+                3,
+            )
+            self.stats.charge_efficiency_observation_count += 1
+            if self.stats.charge_efficiency_observation_count >= 5:
+                self.stats.charge_efficiency_confidence = "high"
+            elif self.stats.charge_efficiency_observation_count >= 2:
+                self.stats.charge_efficiency_confidence = "medium"
+
     def _record_capacity_observation(
         self,
         now: str,
@@ -264,7 +343,7 @@ class BatteryStatsStore:
         prediction: BatteryPrediction,
         event_state: BatteryEventState | None,
     ) -> None:
-        """Learn usable capacity from anchor-to-anchor charge/discharge evidence."""
+        """Learn usable capacity from meaningful anchor-to-anchor discharge evidence."""
         if event_state is None or not event_state.calibration_anchor or prediction.soc_percent is None:
             return
 
@@ -279,8 +358,8 @@ class BatteryStatsStore:
         }
 
         previous = self.stats.last_capacity_anchor
-        self.stats.last_capacity_anchor = anchor
         if not previous:
+            self.stats.last_capacity_anchor = anchor
             return
 
         try:
@@ -288,12 +367,22 @@ class BatteryStatsStore:
             previous_discharge_ah = float(previous.get("cumulative_discharge_ah", 0.0))
             previous_charge_ah = float(previous.get("cumulative_charge_ah", 0.0))
         except (TypeError, ValueError):
+            self.stats.last_capacity_anchor = anchor
             return
 
         soc_delta = previous_soc - prediction.soc_percent
         discharged_ah = self.stats.cumulative_discharge_ah - previous_discharge_ah
         charged_ah = self.stats.cumulative_charge_ah - previous_charge_ah
-        if soc_delta < 5.0 or discharged_ah <= 0:
+
+        throughput_since_anchor = discharged_ah + charged_ah
+        if abs(soc_delta) < 3.0 and throughput_since_anchor < max(inputs.capacity_ah * 0.02, 1.0):
+            return
+
+        self.stats.last_capacity_anchor = anchor
+
+        if soc_delta < 8.0 or discharged_ah <= 0:
+            return
+        if charged_ah > discharged_ah * 0.50:
             return
 
         estimated_capacity = discharged_ah / max(soc_delta / 100.0, 0.01)
@@ -306,7 +395,7 @@ class BatteryStatsStore:
             return
 
         confidence = "low"
-        if soc_delta >= 10.0 and discharged_ah >= inputs.capacity_ah * 0.05:
+        if soc_delta >= 12.0 and discharged_ah >= inputs.capacity_ah * 0.06:
             confidence = "medium"
         if soc_delta >= 25.0 and discharged_ah >= inputs.capacity_ah * 0.15:
             confidence = "high"
@@ -337,7 +426,7 @@ class BatteryStatsStore:
         if not model_predictions or event_state is None or not event_state.calibration_anchor or prediction.soc_percent is None:
             return
 
-        reference_soc = prediction.soc_percent
+        reference_soc = _reference_soc_from_anchor(prediction, event_state)
         observation_models: dict[str, dict[str, float | None]] = {}
         for model, model_prediction in model_predictions.items():
             if model_prediction.soc_percent is None:
@@ -395,6 +484,22 @@ class BatteryStatsStore:
             self.stats.capacity_confidence = "medium"
         else:
             self.stats.capacity_confidence = "low"
+
+
+def _reference_soc_from_anchor(prediction: BatteryPrediction, event_state: BatteryEventState) -> float:
+    """Return an anchor-derived reference SOC for model accuracy learning."""
+    if event_state.state in {"float", "absorption"}:
+        return 100.0
+    if event_state.state == "low_battery":
+        return min(prediction.soc_percent or 20.0, 20.0)
+    return float(prediction.soc_percent or 50.0)
+
+
+def _running_average(current: float | None, value: float, count: int) -> float:
+    """Return online running average."""
+    if current is None or count <= 0:
+        return value
+    return current + (value - current) / (count + 1)
 
 
 def _min_optional(current: float | None, value: float) -> float:
