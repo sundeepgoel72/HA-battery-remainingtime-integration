@@ -11,6 +11,7 @@ from homeassistant.const import PERCENTAGE, UnitOfPower, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import slugify
 
 from .const import (
     ATTR_ALGORITHM,
@@ -220,6 +221,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async_add_entities(entities)
 
 
+def _object_id(entry: ConfigEntry, key: str) -> str:
+    """Return stable suggested entity object id for new registry entries."""
+    base = slugify(entry.title or "battery") or "battery"
+    return f"{base}_{key}"
+
+
 def _battery_profile_attrs(entry: ConfigEntry) -> dict[str, Any]:
     """Return configured battery identity/profile attributes."""
     battery_type = entry.data.get(CONF_BATTERY_TYPE, DEFAULT_BATTERY_TYPE)
@@ -300,6 +307,7 @@ class BatteryRemainingTimeSensor(CoordinatorEntity[BatteryRemainingTimeCoordinat
         self._entry = entry
         self._attr_name = str(description.name or description.key)
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+        self._attr_suggested_object_id = _object_id(entry, description.key)
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -342,6 +350,7 @@ class BatteryStatsSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], Sen
         self._entry = entry
         self._attr_name = str(description.name or description.key)
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+        self._attr_suggested_object_id = _object_id(entry, description.key)
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -378,6 +387,7 @@ class BatteryModelSocSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], 
         self._model_key = model_key
         self._attr_name = MODEL_SENSOR_NAMES.get(model_key, f"SOC {model_key}")
         self._attr_unique_id = f"{entry.entry_id}_soc_{model_key}"
+        self._attr_suggested_object_id = _object_id(entry, f"soc_{model_key}")
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -410,6 +420,7 @@ class BatteryAlgorithmSpreadSensor(CoordinatorEntity[BatteryRemainingTimeCoordin
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_algorithm_spread"
+        self._attr_suggested_object_id = _object_id(entry, "algorithm_spread")
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -437,6 +448,7 @@ class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordi
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_prediction_health"
+        self._attr_suggested_object_id = _object_id(entry, "prediction_health")
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -494,6 +506,7 @@ class BatteryCalibrationStatusSensor(CoordinatorEntity[BatteryRemainingTimeCoord
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_calibration_status"
+        self._attr_suggested_object_id = _object_id(entry, "calibration_status")
         self._attr_device_info = _device_info(entry)
 
     @property
