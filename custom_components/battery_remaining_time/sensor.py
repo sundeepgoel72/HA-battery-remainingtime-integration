@@ -269,6 +269,74 @@ def _model_summary(coordinator: BatteryRemainingTimeCoordinator) -> dict[str, fl
     return {algorithm: telemetry.get("soc_percent") for algorithm, telemetry in coordinator.model_telemetry.items()}
 
 
+def _model_soc_values(coordinator: BatteryRemainingTimeCoordinator) -> dict[str, float]:
+    """Return numeric per-model SOC values excluding the ensemble itself."""
+    values: dict[str, float] = {}
+    for algorithm, telemetry in coordinator.model_telemetry.items():
+        if algorithm == "ensemble":
+            continue
+        value = telemetry.get("soc_percent")
+        if isinstance(value, (int, float)):
+            values[algorithm] = float(value)
+    return values
+
+
+def _algorithm_stddev(coordinator: BatteryRemainingTimeCoordinator) -> float | None:
+    """Return SOC standard deviation across non-ensemble models."""
+    values = list(_model_soc_values(coordinator).values())
+    if len(values) < 2:
+        return None
+    mean = sum(values) / len(values)
+    variance = sum((value - mean) ** 2 for value in values) / len(values)
+    return round(variance ** 0.5, 2)
+
+
+def _algorithm_outlier(coordinator: BatteryRemainingTimeCoordinator) -> str | None:
+    """Return the model furthest from the non-ensemble median when materially divergent."""
+    values = _model_soc_values(coordinator)
+    if len(values) < 3:
+        return None
+    sorted_values = sorted(values.values())
+    mid = len(sorted_values) // 2
+    median = sorted_values[mid] if len(sorted_values) % 2 else (sorted_values[mid - 1] + sorted_values[mid]) / 2
+    model, distance = max(((model, abs(value - median)) for model, value in values.items()), key=lambda item: item[1])
+    return model if distance >= 5.0 else None
+
+
+def _confidence_score(coordinator: BatteryRemainingTimeCoordinator) -> int | None:
+    """Return a 0-100 operational confidence score."""
+    data = coordinator.data
+    if data is None:
+        return None
+    score = {"high": 82.0, "medium": 62.0, "low": 35.0}.get(str(data.confidence), 50.0)
+    spread = coordinator.algorithm_spread
+    if spread is not None:
+        if spread <= 2:
+            score += 12
+        elif spread <= 5:
+            score += 8
+        elif spread <= 10:
+            score += 2
+        elif spread <= 20:
+            score -= 12
+        else:
+            score -= 30
+    event_state = coordinator.event_state
+    if event_state is not None:
+        if event_state.calibration_anchor:
+            score += 6
+        if event_state.state == "unknown":
+            score -= 20
+    stats = coordinator.stats_store.stats
+    if stats.calibration_anchor_events >= 50:
+        score += 6
+    elif stats.calibration_anchor_events >= 10:
+        score += 3
+    if stats.update_count < 5:
+        score -= 15
+    return int(max(0, min(100, round(score))))
+
+
 def _health_attrs(coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry) -> dict[str, Any]:
     """Return learned battery health attributes."""
     stats = coordinator.stats_store.stats
@@ -282,6 +350,13 @@ def _health_attrs(coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEnt
         "capacity_retention_percent": stats.capacity_retention_percent,
         "capacity_confidence": stats.capacity_confidence,
         "capacity_observation_count": stats.capacity_observation_count,
+        "learned_full_voltage": getattr(stats, "learned_full_voltage", None),
+        "learned_empty_voltage": getattr(stats, "learned_empty_voltage", None),
+        "full_voltage_observation_count": getattr(stats, "full_voltage_observation_count", 0),
+        "empty_voltage_observation_count": getattr(stats, "empty_voltage_observation_count", 0),
+        "learned_charge_efficiency": getattr(stats, "learned_charge_efficiency", None),
+        "charge_efficiency_confidence": getattr(stats, "charge_efficiency_confidence", "low"),
+        "charge_efficiency_observation_count": getattr(stats, "charge_efficiency_observation_count", 0),
         "estimated_cycle_equivalents": round(stats.estimated_cycle_equivalents, 3),
         "expected_cycle_life": _expected_cycle_life(entry),
         "remaining_cycles": _remaining_cycles(coordinator, entry),
@@ -329,9 +404,12 @@ class BatteryRemainingTimeSensor(CoordinatorEntity[BatteryRemainingTimeCoordinat
             ATTR_SOC_PERCENT: data.soc_percent,
             ATTR_MODE: data.mode,
             ATTR_CONFIDENCE: data.confidence,
+            "confidence_score": _confidence_score(self.coordinator),
             ATTR_REASON: data.reason,
             ATTR_HISTORY_WINDOW_MINUTES: self.coordinator.config_entry.data.get(CONF_HISTORY_WINDOW_MINUTES),
             "algorithm_spread": self.coordinator.algorithm_spread,
+            "algorithm_stddev": _algorithm_stddev(self.coordinator),
+            "algorithm_outlier": _algorithm_outlier(self.coordinator),
             **_battery_profile_attrs(self._entry),
             "event_state": event_state.state if event_state else None,
             "calibration_anchor": event_state.calibration_anchor if event_state else None,
@@ -368,6 +446,8 @@ class BatteryStatsSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], Sen
             **_battery_profile_attrs(self._entry),
             **_health_attrs(self.coordinator, self._entry),
             "algorithm_spread": self.coordinator.algorithm_spread,
+            "algorithm_stddev": _algorithm_stddev(self.coordinator),
+            "algorithm_outlier": _algorithm_outlier(self.coordinator),
             "model_outputs": _model_summary(self.coordinator),
         }
 
@@ -402,6 +482,8 @@ class BatteryModelSocSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], 
             "model": self._model_key,
             "model_telemetry": telemetry,
             "algorithm_spread": self.coordinator.algorithm_spread,
+            "algorithm_stddev": _algorithm_stddev(self.coordinator),
+            "algorithm_outlier": _algorithm_outlier(self.coordinator),
             "selected_algorithm": selected.algorithm if selected else None,
             "selected_soc_percent": selected.soc_percent if selected else None,
             **_battery_profile_attrs(self._entry),
@@ -431,6 +513,9 @@ class BatteryAlgorithmSpreadSensor(CoordinatorEntity[BatteryRemainingTimeCoordin
     def extra_state_attributes(self) -> dict[str, Any]:
         selected = self.coordinator.data
         return {
+            "algorithm_stddev": _algorithm_stddev(self.coordinator),
+            "algorithm_outlier": _algorithm_outlier(self.coordinator),
+            "confidence_score": _confidence_score(self.coordinator),
             "model_outputs": _model_summary(self.coordinator),
             "selected_algorithm": selected.algorithm if selected else None,
             "selected_soc_percent": selected.soc_percent if selected else None,
@@ -456,13 +541,18 @@ class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordi
         data = self.coordinator.data
         if data is None:
             return None
+        confidence_score = _confidence_score(self.coordinator)
         event_state = self.coordinator.event_state
+        if confidence_score is not None and confidence_score < 45:
+            return "degraded"
         if data.confidence == "low":
             return "degraded"
         if event_state is not None and event_state.state == "unknown":
             return "limited"
         if self.coordinator.algorithm_spread is not None and self.coordinator.algorithm_spread > 20:
             return "divergent"
+        if confidence_score is not None and confidence_score < 70:
+            return "limited"
         return "ok"
 
     @property
@@ -475,9 +565,12 @@ class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordi
         return {
             "algorithm": data.algorithm,
             "confidence": data.confidence,
+            "confidence_score": _confidence_score(self.coordinator),
             "mode": data.mode,
             "selected_soc_percent": data.soc_percent,
             "algorithm_spread": self.coordinator.algorithm_spread,
+            "algorithm_stddev": _algorithm_stddev(self.coordinator),
+            "algorithm_outlier": _algorithm_outlier(self.coordinator),
             "model_outputs": _model_summary(self.coordinator),
             "model_telemetry": self.coordinator.model_telemetry,
             "model_accuracy": stats.model_accuracy,
@@ -525,7 +618,10 @@ class BatteryCalibrationStatusSensor(CoordinatorEntity[BatteryRemainingTimeCoord
         stats = self.coordinator.stats_store.stats
         return {
             "readiness_percent": self.native_value,
+            "confidence_score": _confidence_score(self.coordinator),
             "algorithm_spread": self.coordinator.algorithm_spread,
+            "algorithm_stddev": _algorithm_stddev(self.coordinator),
+            "algorithm_outlier": _algorithm_outlier(self.coordinator),
             "model_outputs": _model_summary(self.coordinator),
             "model_accuracy": stats.model_accuracy,
             **_battery_profile_attrs(self._entry),
