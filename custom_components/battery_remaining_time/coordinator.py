@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -37,9 +38,11 @@ from .predictor import (
     all_model_predictions,
     prediction_to_telemetry,
 )
+from .runtime import runtime_config
 from .storage import BatteryStatsStore
 
 _LOGGER = logging.getLogger(__name__)
+ISSUE_SOURCE_UNAVAILABLE = "source_unavailable"
 
 
 def _state_float(hass: HomeAssistant, entity_id: str | None) -> float | None:
@@ -84,7 +87,9 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         self.model_telemetry = {}
         self.algorithm_spread = None
         self.stats_store = BatteryStatsStore(hass, entry.entry_id)
-        interval = int(entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
+        data = runtime_config(entry)
+        self._last_history_fetch_timestamp: datetime | None = None
+        interval = int(data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
         _LOGGER.info("Battery Remaining Time initialized for '%s' with interval=%ss", entry.title, interval)
         super().__init__(
             hass,
@@ -104,7 +109,7 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
                 self.stats_store.stats.calibration_anchor_events,
             )
 
-        data: dict[str, Any] = self.config_entry.data
+        data: dict[str, Any] = runtime_config(self.config_entry)
         selected_algorithm = str(data.get(CONF_ALGORITHM, DEFAULT_ALGORITHM))
         history_window = int(data.get(CONF_HISTORY_WINDOW_MINUTES, DEFAULT_HISTORY_WINDOW_MINUTES))
         entity_map = {
@@ -115,7 +120,10 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             "temperature": data.get(CONF_TEMPERATURE_SENSOR),
         }
         _LOGGER.debug("Forecast update started: algorithm=%s history_window=%s", selected_algorithm, history_window)
-        history = await async_get_history_points(self.hass, entity_map, history_window)
+        history = await async_get_history_points(self.hass, entity_map, history_window, self._last_history_fetch_timestamp)
+        latest_history_timestamp = _latest_history_timestamp(history)
+        if latest_history_timestamp is not None:
+            self._last_history_fetch_timestamp = latest_history_timestamp
         if not history:
             _LOGGER.warning("No recorder history points found; using current battery states only")
         else:
@@ -151,12 +159,14 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             _LOGGER.warning(
                 "Skipping forecast update because source sensors are unavailable and recorder fallback is insufficient"
             )
+            self._create_source_issue()
             raise UpdateFailed("Battery source sensors unavailable; keeping previous forecast")
 
         if voltage is None:
             _LOGGER.warning("Voltage sensor is missing or unavailable; SOC estimate may be degraded")
         if current is None and charge_power is None and discharge_power is None:
             _LOGGER.warning("No current or power sensors available; runtime prediction may be unavailable")
+        self._delete_source_issue()
 
         _LOGGER.debug(
             "Input snapshot: voltage=%s current=%s charge_power=%s discharge_power=%s temperature=%s previous_soc=%s",
@@ -236,3 +246,29 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             )
         _LOGGER.debug("Forecast detail: net_power=%s reason=%s", result.net_power_w, result.reason)
         return result
+
+    def _create_source_issue(self) -> None:
+        """Create a user-facing repair issue for missing source evidence."""
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            f"{self.config_entry.entry_id}_{ISSUE_SOURCE_UNAVAILABLE}",
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key=ISSUE_SOURCE_UNAVAILABLE,
+        )
+
+    def _delete_source_issue(self) -> None:
+        """Clear source evidence repair issue once readings are usable."""
+        ir.async_delete_issue(
+            self.hass,
+            DOMAIN,
+            f"{self.config_entry.entry_id}_{ISSUE_SOURCE_UNAVAILABLE}",
+        )
+
+
+def _latest_history_timestamp(history: list[HistoryPoint]) -> datetime | None:
+    timestamps = [point.timestamp for point in history if point.timestamp is not None]
+    if not timestamps:
+        return None
+    return max(timestamps)

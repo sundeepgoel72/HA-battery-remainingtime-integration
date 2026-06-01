@@ -104,10 +104,9 @@ class BatteryRemainingTimeOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         """Manage options."""
         if user_input is not None:
-            merged = {**self._config_entry.data, **user_input}
-            self.hass.config_entries.async_update_entry(self._config_entry, data=merged)
-            return self.async_create_entry(title="", data={})
-        return self.async_show_form(step_id="init", data_schema=_schema(self._config_entry.data, include_advanced=True))
+            return self.async_create_entry(title="", data=user_input)
+        defaults = {**self._config_entry.data, **self._config_entry.options}
+        return self.async_show_form(step_id="init", data_schema=_schema(defaults, include_advanced=True))
 
 
 def _entity_selector() -> selector.EntitySelector:

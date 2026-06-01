@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 from typing import Any
 
@@ -113,7 +113,20 @@ def build_history_points(raw: dict[str, list[Any]], entities: dict[str, str | No
     return points
 
 
-async def async_get_history_points(hass: HomeAssistant, entities: dict[str, str | None], minutes: int) -> list[HistoryPoint]:
+def history_start_time(minutes: int, since: datetime | None = None) -> datetime:
+    """Return recorder start time for a window, optionally bounded by a checkpoint."""
+    window_start = dt_util.utcnow() - timedelta(minutes=minutes)
+    if since is None:
+        return window_start
+    return max(window_start, since)
+
+
+async def async_get_history_points(
+    hass: HomeAssistant,
+    entities: dict[str, str | None],
+    minutes: int,
+    since: datetime | None = None,
+) -> list[HistoryPoint]:
     """Fetch recent recorder history and convert it into HistoryPoint objects."""
     entity_ids = [entity_id for entity_id in entities.values() if entity_id]
     if not entity_ids or minutes <= 0:
@@ -121,7 +134,7 @@ async def async_get_history_points(hass: HomeAssistant, entities: dict[str, str 
         return []
 
     end_time = dt_util.utcnow()
-    start_time = end_time - timedelta(minutes=minutes)
+    start_time = history_start_time(minutes, since)
     _LOGGER.debug("Fetching recorder history for %s over %s minutes", entity_ids, minutes)
 
     def fetch():

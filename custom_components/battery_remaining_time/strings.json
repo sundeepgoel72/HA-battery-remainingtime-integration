@@ -76,5 +76,11 @@
       "soc_adaptive_hybrid": {"name": "SOC adaptive hybrid"},
       "soc_ensemble": {"name": "SOC ensemble"}
     }
+  },
+  "issues": {
+    "source_unavailable": {
+      "title": "Battery source sensors are unavailable",
+      "description": "Battery Remaining Time cannot calculate a forecast because the configured voltage sensor and current or power sensors are unavailable, and recorder fallback data is insufficient. Check that the configured source sensors exist and have numeric states."
+    }
   }
 }

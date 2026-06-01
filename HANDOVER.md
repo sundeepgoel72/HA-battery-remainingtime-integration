@@ -15,11 +15,16 @@ Recent work completed:
 - Reworked model accuracy learning to use raw sensor evidence instead of scoring models against their own selected prediction.
 - Marked learning, comparison, prediction health, calibration, and algorithm spread sensors as diagnostic entities.
 - Trimmed normal forecast sensor attributes to reduce recorder payload.
+- Added focused pytest coverage for config identity, runtime options, depletion voltage, cycle-life mapping, recorder timestamp filtering, and raw-anchor model scoring.
+- Moved mutable options into `entry.options` and added a runtime config merge helper.
+- Added Home Assistant Repairs issue creation for unavailable source sensor evidence.
+- Removed the redundant `comparison.py` helper.
 
 Validation performed:
 
 - `python -m compileall custom_components/battery_remaining_time`
 - `ruff check custom_components/battery_remaining_time`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest`
 
 Latest pushed commit at handover time:
 
@@ -46,19 +51,17 @@ Latest pushed commit at handover time:
 
 Highest priority:
 
-1. Add tests for config flow setup, options reload, and stable unique ID generation.
-2. Add tests for recorder history normalization and timestamp-based incremental learning.
-3. Add tests for depletion voltage behavior and time-to-depletion outputs.
-4. Add tests for battery type cycle-life calculations.
-5. Add tests for model accuracy learning using raw calibration evidence.
+1. Add Home Assistant integration tests for setup, reload, unload, and entity registry stability.
+2. Add config-flow tests with Home Assistant test helpers for duplicate setup and options reload.
+3. Add recorder integration tests against Home Assistant recorder fixtures.
+4. Add manual runtime validation in a real Home Assistant instance.
 
 Quality and architecture:
 
-1. Review whether options should be stored in `entry.options` instead of merged into `entry.data`.
-2. Consider reducing recorder history fetch frequency or using shorter incremental queries.
-3. Review `comparison.py`; it is currently redundant with predictor model comparison logic.
-4. Consider exposing only stable public attributes and moving verbose diagnostics into Home Assistant diagnostics support.
-5. Add repair or warning paths for missing voltage/current/power sensors instead of only logging warnings.
+1. Consider moving verbose diagnostics into Home Assistant diagnostics support.
+2. Review whether recorder history should preserve a full prediction context window while querying incremental learning windows separately.
+3. Add richer repair guidance for partially degraded sources, such as missing current but available voltage.
+4. Measure recorder query cost with long history windows and short update intervals.
 
 Release checklist:
 
@@ -68,8 +71,8 @@ Release checklist:
 4. Confirm diagnostic entities appear as diagnostic in Home Assistant UI.
 5. Exercise startup when source sensors are unavailable and later become available.
 6. Verify recorder database load with long history windows.
-7. Tag beta only after the test suite covers the learning and recorder behavior.
+7. Tag beta only after the Home Assistant integration smoke test passes.
 
 ## Notes
 
-The integration now compiles and passes `ruff`, but it does not yet have a committed test suite. The most important risk before beta is behavioral regression in the adaptive learning path, especially around recorder history intervals and calibration anchors.
+The integration now compiles, passes `ruff`, and has a focused unit test suite. The most important remaining risk before beta is real Home Assistant runtime behavior, especially config-entry reloads, recorder query cost, Repairs issue display, and entity registry stability.

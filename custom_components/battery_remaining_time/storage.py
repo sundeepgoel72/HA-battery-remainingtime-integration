@@ -140,7 +140,7 @@ class BatteryStatsStore:
         self._record_health_observation(now, inputs, prediction, event_state, new_history_points)
         self._record_anchor_observation(now, inputs, prediction, event_state)
         self._record_capacity_observation(now, inputs, prediction, event_state)
-        self._record_model_performance(now, inputs, prediction, event_state, model_predictions)
+        self._record_model_performance(now, inputs, event_state, model_predictions)
         latest_history_timestamp = _latest_history_timestamp(inputs.history)
         if latest_history_timestamp is not None:
             self.stats.last_history_point_timestamp = latest_history_timestamp.isoformat()
@@ -427,12 +427,11 @@ class BatteryStatsStore:
         self,
         now: str,
         inputs: BatteryInputs,
-        prediction: BatteryPrediction,
         event_state: BatteryEventState | None,
         model_predictions: dict[str, BatteryPrediction] | None,
     ) -> None:
         """Update model accuracy statistics at calibration anchors."""
-        if not model_predictions or event_state is None or not event_state.calibration_anchor or prediction.soc_percent is None:
+        if not model_predictions or event_state is None or not event_state.calibration_anchor:
             return
 
         reference_soc = _reference_soc_from_anchor(inputs, event_state)
