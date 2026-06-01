@@ -49,6 +49,7 @@ class BatteryInputs:
     charge_power: float | None = None
     discharge_power: float | None = None
     temperature: float | None = None
+    depletion_voltage: float | None = None
     history_window_minutes: int = 60
     peukert_exponent: float = 1.20
     charge_efficiency: float = 0.85
@@ -72,6 +73,8 @@ class BatteryPrediction:
     time_to_full_h: float | None
     confidence: str
     reason: str
+    usable_soc_percent: float | None = None
+    time_to_depletion_h: float | None = None
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -88,9 +91,11 @@ def prediction_to_telemetry(prediction: BatteryPrediction) -> dict[str, float | 
     """Return a compact serializable representation for logs/attributes."""
     return {
         "soc_percent": prediction.soc_percent,
+        "usable_soc_percent": prediction.usable_soc_percent,
         "mode": prediction.mode,
         "net_power_w": prediction.net_power_w,
         "time_to_empty_h": prediction.time_to_empty_h,
+        "time_to_depletion_h": prediction.time_to_depletion_h,
         "time_to_full_h": prediction.time_to_full_h,
         "confidence": prediction.confidence,
         "reason": prediction.reason,
@@ -134,6 +139,41 @@ def estimate_soc_ocv(voltage: float | None, nominal_voltage: float) -> float | N
         if v1 <= scaled <= v2:
             return s1 + ((scaled - v1) / (v2 - v1)) * (s2 - s1)
     return None
+
+
+def practical_usable_soc(inputs: BatteryInputs, soc: float | None) -> float | None:
+    """Return usable SOC above the configured depletion/cutoff voltage.
+
+    This is operational SOC for inverter users. It intentionally does not replace
+    battery SOC because the battery may have chemical capacity remaining below an
+    inverter's trip voltage.
+    """
+    if soc is None:
+        return None
+    if inputs.depletion_voltage is None or inputs.depletion_voltage <= 0 or inputs.voltage is None:
+        return soc
+    if inputs.voltage <= inputs.depletion_voltage:
+        return 0.0
+    full_voltage = max(inputs.nominal_voltage * (12.8 / 12.0), inputs.depletion_voltage + 0.1)
+    if inputs.voltage >= full_voltage:
+        return min(soc, 100.0)
+    voltage_usable = ((inputs.voltage - inputs.depletion_voltage) / (full_voltage - inputs.depletion_voltage)) * 100.0
+    return clamp(min(soc, voltage_usable), 0.0, 100.0)
+
+
+def time_to_depletion(inputs: BatteryInputs, usable_soc: float | None, net_power: float | None, *, peukert: bool = False, temp: bool = False) -> float | None:
+    """Return runtime until practical depletion/cutoff voltage is reached."""
+    if usable_soc is None or net_power is None or mode_from_power(net_power) != MODE_DISCHARGING:
+        return None
+    cap_wh = capacity_wh(inputs, temperature_adjusted=temp)
+    remaining_wh = cap_wh * clamp(usable_soc, 0, 100) / 100
+    discharge_w = abs(net_power)
+    if peukert and inputs.nominal_voltage > 0:
+        amps = discharge_w / inputs.nominal_voltage
+        rated_current = max(inputs.capacity_ah / 20.0, 0.1)
+        factor = (rated_current / max(amps, 0.1)) ** max(inputs.peukert_exponent - 1.0, 0.0)
+        remaining_wh *= clamp(factor, 0.25, 1.2)
+    return remaining_wh / discharge_w if discharge_w > 1 else None
 
 
 def temperature_capacity_factor(temp_c: float | None) -> float:
@@ -387,12 +427,7 @@ def _is_resting_like(inputs: BatteryInputs, net_power: float | None) -> bool:
 
 
 def _resting_ocv_anchor_soc(predictions: dict[str, BatteryPrediction]) -> float | None:
-    """Return authoritative resting SOC anchor from voltage-based models.
-
-    During idle/resting periods, high open-circuit voltage is better evidence than
-    drifted coulomb/history models. This prevents current_flow, power_flow, and
-    KiBaM drift from dragging a fully charged resting battery down to 40-80%.
-    """
+    """Return authoritative resting SOC anchor from voltage-based models."""
     ocv = predictions.get(ALGORITHM_VOLTAGE_ONLY)
     shepherd = predictions.get(ALGORITHM_SHEPHERD)
     if ocv is None or ocv.soc_percent is None:
@@ -429,14 +464,18 @@ def _resting_weight_multiplier(algorithm: str) -> float:
     }.get(algorithm, 1.0)
 
 
-def ensemble_from_predictions(inputs: BatteryInputs, predictions: dict[str, BatteryPrediction]) -> BatteryPrediction:
-    """Build ensemble result from already-computed model outputs.
+def _apply_depletion_metrics(inputs: BatteryInputs, prediction: BatteryPrediction) -> BatteryPrediction:
+    """Populate practical usable SOC and time-to-depletion on one prediction."""
+    usable = practical_usable_soc(inputs, prediction.soc_percent)
+    prediction.usable_soc_percent = safe_round(usable, 1)
+    prediction.time_to_depletion_h = safe_round(
+        time_to_depletion(inputs, usable, prediction.net_power_w, peukert=True, temp=True), 2
+    )
+    return prediction
 
-    Confidence remains the primary weight. Learned model accuracy is applied as a
-    conservative modifier once calibration-anchor evidence exists. When the
-    battery is resting and voltage indicates high SOC, voltage-derived models are
-    treated as an immediate anchor to prevent history-model drift.
-    """
+
+def ensemble_from_predictions(inputs: BatteryInputs, predictions: dict[str, BatteryPrediction]) -> BatteryPrediction:
+    """Build ensemble result from already-computed model outputs."""
     net, src = resolve_net_power(inputs)
     resting = _is_resting_like(inputs, net)
     if resting:
@@ -483,6 +522,8 @@ def all_model_predictions(inputs: BatteryInputs) -> dict[str, BatteryPrediction]
     """Run all models, including ensemble, for telemetry and diagnostics."""
     predictions = base_model_predictions(inputs)
     predictions[ALGORITHM_ENSEMBLE] = ensemble_from_predictions(inputs, predictions)
+    for prediction in predictions.values():
+        _apply_depletion_metrics(inputs, prediction)
     return predictions
 
 
