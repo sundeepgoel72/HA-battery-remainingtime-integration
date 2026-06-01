@@ -106,6 +106,7 @@ def build_history_points(raw: dict[str, list[Any]], entities: dict[str, str | No
                 charge_power=_latest(charge, stamp),
                 discharge_power=_latest(discharge, stamp),
                 temperature=_latest(temp, stamp),
+                timestamp=stamp,
             )
         )
     _LOGGER.debug("Built %s battery history points from recorder", len(points))

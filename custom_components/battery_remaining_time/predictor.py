@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from math import isfinite
 from typing import Callable
 
@@ -35,6 +36,7 @@ class HistoryPoint:
     charge_power: float | None = None
     discharge_power: float | None = None
     temperature: float | None = None
+    timestamp: datetime | None = None
 
 
 @dataclass(slots=True)

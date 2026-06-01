@@ -8,9 +8,10 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .events import BatteryEventState
-from .predictor import BatteryInputs, BatteryPrediction
+from .predictor import BatteryInputs, BatteryPrediction, HistoryPoint
 
 STORAGE_KEY = "battery_remaining_time"
 STORAGE_VERSION = 1
@@ -52,6 +53,7 @@ class BatteryStats:
     cumulative_charge_ah: float = 0.0
     last_health_observation: dict[str, Any] = field(default_factory=dict)
     recent_health_observations: list[dict[str, Any]] = field(default_factory=list)
+    last_history_point_timestamp: str | None = None
 
     configured_capacity_ah: float | None = None
     learned_capacity_ah: float | None = None
@@ -134,10 +136,14 @@ class BatteryStatsStore:
             if inputs.current < 0:
                 self.stats.highest_discharge_current = _max_optional(self.stats.highest_discharge_current, abs(inputs.current))
 
-        self._record_health_observation(now, inputs, prediction, event_state)
+        new_history_points = _new_history_points(inputs.history, self.stats.last_history_point_timestamp)
+        self._record_health_observation(now, inputs, prediction, event_state, new_history_points)
         self._record_anchor_observation(now, inputs, prediction, event_state)
         self._record_capacity_observation(now, inputs, prediction, event_state)
-        self._record_model_performance(now, prediction, event_state, model_predictions)
+        self._record_model_performance(now, inputs, prediction, event_state, model_predictions)
+        latest_history_timestamp = _latest_history_timestamp(inputs.history)
+        if latest_history_timestamp is not None:
+            self.stats.last_history_point_timestamp = latest_history_timestamp.isoformat()
 
         if event_state is not None:
             self.stats.event_counts[event_state.state] = self.stats.event_counts.get(event_state.state, 0) + 1
@@ -162,6 +168,7 @@ class BatteryStatsStore:
         inputs: BatteryInputs,
         prediction: BatteryPrediction,
         event_state: BatteryEventState | None,
+        history_points: list[HistoryPoint],
     ) -> None:
         """Update learned health indicators from observed operating shape."""
         discharge_ah = 0.0
@@ -173,7 +180,7 @@ class BatteryStatsStore:
         low_voltage_samples = 0
         high_discharge_samples = 0
 
-        for point in inputs.history:
+        for point in history_points:
             dt_hours = max(point.dt_hours, 0.0)
             if dt_hours <= 0:
                 continue
@@ -214,7 +221,8 @@ class BatteryStatsStore:
         high_discharge_ratio = high_discharge_samples / current_samples if current_samples else 0.0
         spread = None
         if prediction.soc_percent is not None:
-            spread = abs(prediction.soc_percent - (inputs.previous_soc_percent or prediction.soc_percent))
+            previous_soc = inputs.previous_soc_percent
+            spread = abs(prediction.soc_percent - previous_soc) if previous_soc is not None else 0.0
 
         stress_score = 0.0
         stress_score += min(low_voltage_ratio * 35.0, 35.0)
@@ -418,6 +426,7 @@ class BatteryStatsStore:
     def _record_model_performance(
         self,
         now: str,
+        inputs: BatteryInputs,
         prediction: BatteryPrediction,
         event_state: BatteryEventState | None,
         model_predictions: dict[str, BatteryPrediction] | None,
@@ -426,7 +435,9 @@ class BatteryStatsStore:
         if not model_predictions or event_state is None or not event_state.calibration_anchor or prediction.soc_percent is None:
             return
 
-        reference_soc = _reference_soc_from_anchor(prediction, event_state)
+        reference_soc = _reference_soc_from_anchor(inputs, event_state)
+        if reference_soc is None:
+            return
         observation_models: dict[str, dict[str, float | None]] = {}
         for model, model_prediction in model_predictions.items():
             if model_prediction.soc_percent is None:
@@ -486,13 +497,22 @@ class BatteryStatsStore:
             self.stats.capacity_confidence = "low"
 
 
-def _reference_soc_from_anchor(prediction: BatteryPrediction, event_state: BatteryEventState) -> float:
-    """Return an anchor-derived reference SOC for model accuracy learning."""
+def _reference_soc_from_anchor(inputs: BatteryInputs, event_state: BatteryEventState) -> float | None:
+    """Return an anchor-derived reference SOC for model accuracy learning.
+
+    The reference must come from raw sensor evidence rather than the selected
+    prediction, otherwise the learner trains on its own output.
+    """
     if event_state.state in {"float", "absorption"}:
         return 100.0
     if event_state.state == "low_battery":
-        return min(prediction.soc_percent or 20.0, 20.0)
-    return float(prediction.soc_percent or 50.0)
+        if inputs.depletion_voltage is not None and inputs.voltage is not None:
+            return practical_low_soc_reference(inputs)
+        return 20.0
+    if inputs.voltage is None:
+        return None
+    ocv_soc = estimate_soc_from_inputs(inputs)
+    return ocv_soc if ocv_soc is not None else 50.0
 
 
 def _running_average(current: float | None, value: float, count: int) -> float:
@@ -512,3 +532,45 @@ def _max_optional(current: float | None, value: float) -> float:
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
+
+
+def estimate_soc_from_inputs(inputs: BatteryInputs) -> float | None:
+    """Return a voltage-derived SOC reference for anchor learning."""
+    if inputs.voltage is None:
+        return None
+    from .predictor import estimate_soc_ocv
+
+    return estimate_soc_ocv(inputs.voltage, inputs.nominal_voltage)
+
+
+def practical_low_soc_reference(inputs: BatteryInputs) -> float:
+    """Return a conservative low-SOC reference from raw input evidence."""
+    if inputs.voltage is None:
+        return 20.0
+    if inputs.depletion_voltage is None:
+        return 20.0
+    if inputs.voltage <= inputs.depletion_voltage:
+        return 0.0
+    span = max(inputs.nominal_voltage * (12.8 / 12.0) - inputs.depletion_voltage, 0.1)
+    return _clamp(((inputs.voltage - inputs.depletion_voltage) / span) * 20.0, 0.0, 20.0)
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    return dt_util.parse_datetime(value)
+
+
+def _latest_history_timestamp(history: list[HistoryPoint]) -> datetime | None:
+    timestamps = [point.timestamp for point in history if point.timestamp is not None]
+    if not timestamps:
+        return None
+    return max(timestamps)
+
+
+def _new_history_points(history: list[HistoryPoint], last_processed_timestamp: str | None) -> list[HistoryPoint]:
+    last_processed = _parse_timestamp(last_processed_timestamp)
+    if last_processed is None:
+        return history
+    points = [point for point in history if point.timestamp is not None and point.timestamp > last_processed]
+    return points

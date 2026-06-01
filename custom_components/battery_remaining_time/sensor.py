@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityCategory,
+    SensorEntityDescription,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfPower, UnitOfTime
 from homeassistant.core import HomeAssistant
@@ -22,6 +28,12 @@ from .const import (
     ATTR_MODE,
     ATTR_REASON,
     ATTR_SOC_PERCENT,
+    BATTERY_TYPE_AGM,
+    BATTERY_TYPE_CUSTOM,
+    BATTERY_TYPE_FLOODED,
+    BATTERY_TYPE_GEL,
+    BATTERY_TYPE_LEAD_CARBON,
+    BATTERY_TYPE_TUBULAR,
     BATTERY_TYPE_LABELS,
     CONF_BATTERY_BRAND_MODEL,
     CONF_BATTERY_TYPE,
@@ -38,12 +50,12 @@ UNIT_CYCLES = "cycles"
 UNIT_VOLT = "V"
 DEFAULT_EXPECTED_CYCLE_LIFE = 1200.0
 EXPECTED_CYCLE_LIFE_BY_TYPE = {
-    "flooded_lead_acid": 800.0,
-    "tubular_lead_acid": 1500.0,
-    "agm": 600.0,
-    "gel": 800.0,
-    "lead_carbon": 2000.0,
-    "custom": DEFAULT_EXPECTED_CYCLE_LIFE,
+    BATTERY_TYPE_FLOODED: 800.0,
+    BATTERY_TYPE_TUBULAR: 1500.0,
+    BATTERY_TYPE_AGM: 600.0,
+    BATTERY_TYPE_GEL: 800.0,
+    BATTERY_TYPE_LEAD_CARBON: 2000.0,
+    BATTERY_TYPE_CUSTOM: DEFAULT_EXPECTED_CYCLE_LIFE,
 }
 
 MODEL_SOC_SENSOR_KEYS = (
@@ -431,12 +443,8 @@ class BatteryRemainingTimeSensor(CoordinatorEntity[BatteryRemainingTimeCoordinat
             ATTR_SOC_PERCENT: data.soc_percent,
             ATTR_MODE: data.mode,
             ATTR_CONFIDENCE: data.confidence,
-            "confidence_score": _confidence_score(self.coordinator),
             ATTR_REASON: data.reason,
             ATTR_HISTORY_WINDOW_MINUTES: self.coordinator.config_entry.data.get(CONF_HISTORY_WINDOW_MINUTES),
-            "algorithm_spread": self.coordinator.algorithm_spread,
-            "algorithm_stddev": _algorithm_stddev(self.coordinator),
-            "algorithm_outlier": _algorithm_outlier(self.coordinator),
             **_battery_profile_attrs(self._entry),
             "event_state": event_state.state if event_state else None,
             "calibration_anchor": event_state.calibration_anchor if event_state else None,
@@ -448,6 +456,7 @@ class BatteryStatsSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], Sen
 
     entity_description: BatteryStatsSensorDescription
     _attr_has_entity_name = False
+    _attr_entity_category = SensorEntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry, description: BatteryStatsSensorDescription) -> None:
         super().__init__(coordinator)
@@ -484,6 +493,7 @@ class BatteryModelSocSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], 
 
     _attr_has_entity_name = False
     _attr_entity_registry_enabled_default = False
+    _attr_entity_category = SensorEntityCategory.DIAGNOSTIC
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_device_class = SensorDeviceClass.BATTERY
@@ -521,6 +531,7 @@ class BatteryAlgorithmSpreadSensor(CoordinatorEntity[BatteryRemainingTimeCoordin
     """Dedicated algorithm divergence/spread sensor."""
 
     _attr_has_entity_name = False
+    _attr_entity_category = SensorEntityCategory.DIAGNOSTIC
     _attr_name = SENSOR_NAMES["algorithm_spread"]
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -554,6 +565,7 @@ class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordi
     """Operational health sensor for prediction quality."""
 
     _attr_has_entity_name = False
+    _attr_entity_category = SensorEntityCategory.DIAGNOSTIC
     _attr_name = SENSOR_NAMES["prediction_health"]
 
     def __init__(self, coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry) -> None:
@@ -618,6 +630,7 @@ class BatteryCalibrationStatusSensor(CoordinatorEntity[BatteryRemainingTimeCoord
     """Calibration evidence readiness sensor."""
 
     _attr_has_entity_name = False
+    _attr_entity_category = SensorEntityCategory.DIAGNOSTIC
     _attr_name = SENSOR_NAMES["calibration_status"]
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT

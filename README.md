@@ -17,20 +17,17 @@ It estimates state of charge (SOC), time to empty (TTE), time to full (TTF), bat
 
 ## Supported Battery Types
 
-Current focus:
+Supported:
 
 - Flooded Lead Acid
 - Tubular Lead Acid
-
-Planned:
-
 - AGM
 - Gel
 - Lead Carbon
 
 ## Diagnostics
 
-Diagnostic entities include prediction_health and calibration_status.
+Diagnostic entities include prediction_health, calibration_status, algorithm_spread, and the learned battery statistics sensors.
 
 ## Installation
 
@@ -40,10 +37,10 @@ https://github.com/sundeepgoel72/HA-battery-remainingtime-integration
 
 ## Roadmap
 
-- Algorithm comparison sensors
-- Model divergence metrics
-- Adaptive learning
-- Self-calibration improvements
+- Recorder load reduction
+- Better calibration truth sources
+- Test coverage for config flow, recorder parsing, and storage learning
+- Further self-calibration refinements
 
 ## Project Goal
 

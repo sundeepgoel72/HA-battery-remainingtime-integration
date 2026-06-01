@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from json import dumps
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
 import voluptuous as vol
 
@@ -77,7 +79,7 @@ class BatteryRemainingTimeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Handle the initial setup step."""
         if user_input is not None:
-            await self.async_set_unique_id(user_input[CONF_NAME])
+            await self.async_set_unique_id(_stable_unique_id(user_input))
             self._abort_if_unique_id_configured()
             return self.async_create_entry(title=user_input[CONF_NAME], data=user_input)
 
@@ -158,3 +160,20 @@ def _schema(defaults: dict[str, Any] | None = None, *, include_advanced: bool = 
         )
 
     return vol.Schema(fields)
+
+
+def _stable_unique_id(user_input: dict[str, Any]) -> str:
+    """Return a stable unique ID derived from the configured battery inputs."""
+    identity = {
+        CONF_VOLTAGE_SENSOR: user_input.get(CONF_VOLTAGE_SENSOR),
+        CONF_CURRENT_SENSOR: user_input.get(CONF_CURRENT_SENSOR),
+        CONF_CHARGE_POWER_SENSOR: user_input.get(CONF_CHARGE_POWER_SENSOR),
+        CONF_DISCHARGE_POWER_SENSOR: user_input.get(CONF_DISCHARGE_POWER_SENSOR),
+        CONF_TEMPERATURE_SENSOR: user_input.get(CONF_TEMPERATURE_SENSOR),
+        CONF_BATTERY_TYPE: user_input.get(CONF_BATTERY_TYPE),
+        CONF_BATTERY_CAPACITY_AH: user_input.get(CONF_BATTERY_CAPACITY_AH),
+        CONF_NOMINAL_VOLTAGE: user_input.get(CONF_NOMINAL_VOLTAGE),
+        CONF_BATTERY_BRAND_MODEL: user_input.get(CONF_BATTERY_BRAND_MODEL, ""),
+    }
+    payload = dumps(identity, sort_keys=True, separators=(",", ":"))
+    return str(uuid5(NAMESPACE_URL, f"{DOMAIN}:{payload}"))
