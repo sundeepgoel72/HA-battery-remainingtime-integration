@@ -369,12 +369,90 @@ def base_model_predictions(inputs: BatteryInputs) -> dict[str, BatteryPrediction
     return {algorithm: fn(inputs) for algorithm, fn in BASE_MODEL_FUNCTIONS}
 
 
+def _weighted_average(terms: list[tuple[float, float]]) -> float | None:
+    """Return a weighted average from non-empty numeric terms."""
+    total_weight = sum(weight for _, weight in terms)
+    if total_weight <= 0:
+        return None
+    return sum(value * weight for value, weight in terms) / total_weight
+
+
+def _is_resting_like(inputs: BatteryInputs, net_power: float | None) -> bool:
+    """Return true when live readings indicate idle/resting behaviour."""
+    if net_power is not None and abs(net_power) <= 10.0:
+        return True
+    if inputs.current is not None and abs(inputs.current) <= max(inputs.capacity_ah * 0.005, 1.0):
+        return True
+    return False
+
+
+def _resting_ocv_anchor_soc(predictions: dict[str, BatteryPrediction]) -> float | None:
+    """Return authoritative resting SOC anchor from voltage-based models.
+
+    During idle/resting periods, high open-circuit voltage is better evidence than
+    drifted coulomb/history models. This prevents current_flow, power_flow, and
+    KiBaM drift from dragging a fully charged resting battery down to 40-80%.
+    """
+    ocv = predictions.get(ALGORITHM_VOLTAGE_ONLY)
+    shepherd = predictions.get(ALGORITHM_SHEPHERD)
+    if ocv is None or ocv.soc_percent is None:
+        return None
+
+    anchor_terms: list[tuple[float, float]] = [(ocv.soc_percent, 0.65)]
+    if shepherd is not None and shepherd.soc_percent is not None:
+        anchor_terms.append((shepherd.soc_percent, 0.35))
+
+    anchor = _weighted_average(anchor_terms)
+    if anchor is None or anchor < 90.0:
+        return None
+
+    adaptive = predictions.get(ALGORITHM_ADAPTIVE_HYBRID)
+    if adaptive is not None and adaptive.soc_percent is not None and abs(adaptive.soc_percent - anchor) <= 8.0:
+        anchor_terms.append((adaptive.soc_percent, 0.15))
+        anchor = _weighted_average(anchor_terms)
+
+    return anchor
+
+
+def _resting_weight_multiplier(algorithm: str) -> float:
+    """Weight adjustment for non-full resting states."""
+    return {
+        ALGORITHM_VOLTAGE_ONLY: 4.0,
+        ALGORITHM_SHEPHERD: 3.5,
+        ALGORITHM_ADAPTIVE_HYBRID: 1.6,
+        ALGORITHM_PEUCKERT: 1.2,
+        ALGORITHM_HYBRID_LEAD_ACID: 1.0,
+        ALGORITHM_TEMPERATURE: 1.0,
+        ALGORITHM_CURRENT_FLOW: 0.35,
+        ALGORITHM_POWER_FLOW: 0.35,
+        ALGORITHM_KIBAM: 0.35,
+    }.get(algorithm, 1.0)
+
+
 def ensemble_from_predictions(inputs: BatteryInputs, predictions: dict[str, BatteryPrediction]) -> BatteryPrediction:
     """Build ensemble result from already-computed model outputs.
 
     Confidence remains the primary weight. Learned model accuracy is applied as a
-    conservative modifier once calibration-anchor evidence exists.
+    conservative modifier once calibration-anchor evidence exists. When the
+    battery is resting and voltage indicates high SOC, voltage-derived models are
+    treated as an immediate anchor to prevent history-model drift.
     """
+    net, src = resolve_net_power(inputs)
+    resting = _is_resting_like(inputs, net)
+    if resting:
+        anchor_soc = _resting_ocv_anchor_soc(predictions)
+        if anchor_soc is not None:
+            tte, ttf = runtime_from_soc(inputs, anchor_soc, net, peukert=True, temp=True)
+            return _prediction(
+                ALGORITHM_ENSEMBLE,
+                anchor_soc,
+                net,
+                tte,
+                ttf,
+                "high",
+                f"resting OCV/Shepherd anchor; suppressed drifted history models; {src}",
+            )
+
     confidence_weights = {"high": 1.0, "medium": 0.55, "low": 0.20}
     terms: list[tuple[float, float]] = []
     learned_used = False
@@ -382,20 +460,20 @@ def ensemble_from_predictions(inputs: BatteryInputs, predictions: dict[str, Batt
         if prediction.soc_percent is None:
             continue
         confidence_weight = confidence_weights[prediction.confidence]
+        final_weight = confidence_weight * (_resting_weight_multiplier(algorithm) if resting else 1.0)
         learned_accuracy = inputs.model_accuracy.get(algorithm)
         if learned_accuracy is not None:
             learned_used = True
             accuracy_weight = clamp(float(learned_accuracy), 0.05, 1.0)
-            # Conservative blend: 70% old behaviour, 30% learned performance.
-            final_weight = confidence_weight * ((0.70) + (0.30 * accuracy_weight))
-        else:
-            final_weight = confidence_weight
+            final_weight *= (0.70) + (0.30 * accuracy_weight)
         terms.append((prediction.soc_percent, final_weight))
-    soc = sum(v * w for v, w in terms) / sum(w for _, w in terms) if terms else None
-    net, src = resolve_net_power(inputs)
+
+    soc = _weighted_average(terms)
     tte, ttf = runtime_from_soc(inputs, soc, net, peukert=True, temp=True)
     conf = "high" if len(terms) >= 4 else "medium" if terms else "low"
     reason = f"ensemble of {len(terms)} models; {src}"
+    if resting:
+        reason += "; resting voltage-biased weighting"
     if learned_used:
         reason += "; adaptive accuracy weighting"
     return _prediction(ALGORITHM_ENSEMBLE, soc, net, tte, ttf, conf, reason)
