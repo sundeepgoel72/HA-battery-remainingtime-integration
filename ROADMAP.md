@@ -32,6 +32,9 @@
 
 ## Phase 5 - Public Release
 
-- HACS publication: beta preparation in progress
+- HACS publication: beta hardening in progress
+- Diagnostics download support: complete
+- Translation coverage sync: complete
+- Options-flow title sync: complete
 - Community validation: pending
 - Contributor onboarding: pending

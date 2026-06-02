@@ -10,7 +10,7 @@ The Battery Remaining Time integration is ready for a HACS beta release with som
 
 ## 1. Manifest.json Review
 
-### Status: ✅ READY (Minor Enhancement)
+### Status: ✅ READY
 
 **Current State:**
 ```json
@@ -50,9 +50,10 @@ The Battery Remaining Time integration is ready for a HACS beta release with som
 ```
 
 **Action Items:**
-- [ ] Add `"version": "0.1.0"` field
-- [ ] Add `"iot_class": "local_polling"` (matches hacs.json)
-- [ ] Add `"homeassistant": "2024.6.0"` (minimum required version)
+- [x] Add version field
+- [x] Add `"iot_class": "local_polling"` (matches hacs.json)
+- [x] Add `"homeassistant": "2024.6.0"` (minimum required version)
+- [x] Add `issue_tracker`
 
 ---
 
@@ -130,7 +131,7 @@ calibration_status        → battery_calibration_status (diagnostic)
 ### Status: ✅ READY
 
 **Findings:**
-- ✅ strings.json is comprehensive
+- ✅ strings.json now covers the current config-flow and sensor surface
 - ✅ All config flow fields have translations
 - ✅ All entity names are translatable
 - ⚠️ No language-specific translation files yet (out of scope for beta)
@@ -160,7 +161,7 @@ calibration_status        → battery_calibration_status (diagnostic)
 
 ### Status: ✅ READY
 
-**Current Diagnostic Sensors:**
+**Current Diagnostic Surface:**
 
 | Sensor | Key | Category | Purpose |
 |--------|-----|----------|---------|
@@ -171,13 +172,14 @@ calibration_status        → battery_calibration_status (diagnostic)
 | Prediction Health | `prediction_health` | DIAGNOSTIC | Overall prediction quality |
 | Calibration Status | `calibration_status` | DIAGNOSTIC | Evidence readiness % |
 | Algorithm Spread | `algorithm_spread` | DIAGNOSTIC | Model divergence % |
-| Model SOC Sensors | `soc_{model}` | DIAGNOSTIC | Per-model SOC comparison |
+| Diagnostics Download | `diagnostics.py` | N/A | Redacted config-entry support package |
 
 **Findings:**
 - ✅ Diagnostic entities properly categorized
 - ✅ Rich attributes provide context (confidence, observation counts, etc.)
 - ✅ Prediction health sensor provides operational status summary
 - ✅ Calibration status shows readiness for learning
+- ✅ Home Assistant diagnostics download is implemented with entity-id/name redaction
 
 **Diagnostic Attributes:**
 Each diagnostic sensor includes comprehensive attributes:

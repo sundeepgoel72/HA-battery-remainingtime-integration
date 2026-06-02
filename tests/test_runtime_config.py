@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from homeassistant.const import CONF_NAME
 
-from custom_components.battery_remaining_time.config_flow import _stable_unique_id
+from custom_components.battery_remaining_time.config_flow import _maybe_update_entry_title, _stable_unique_id
 from custom_components.battery_remaining_time.const import (
     CONF_ALGORITHM,
     CONF_BATTERY_CAPACITY_AH,
@@ -53,3 +53,22 @@ def test_runtime_config_options_override_data() -> None:
 
     assert data[CONF_UPDATE_INTERVAL] == 30
     assert data[CONF_HISTORY_WINDOW_MINUTES] == 120
+
+
+def test_options_title_sync_updates_config_entry_title() -> None:
+    """Changing the editable battery name should update the entry title."""
+
+    class FakeConfigEntries:
+        def __init__(self) -> None:
+            self.calls: list[tuple[object, str]] = []
+
+        def async_update_entry(self, entry: object, *, title: str) -> None:
+            self.calls.append((entry, title))
+
+    manager = FakeConfigEntries()
+    hass = SimpleNamespace(config_entries=manager)
+    entry = SimpleNamespace(title="Old Battery")
+
+    _maybe_update_entry_title(hass, entry, {CONF_NAME: "New Battery"})
+
+    assert manager.calls == [(entry, "New Battery")]

@@ -92,7 +92,15 @@ Produce:
 
 Implement any low-risk fixes.
 
-Status: Pending.
+Progress:
+
+- Added Home Assistant diagnostics download support with config redaction.
+- Synced translation coverage with the current entity/config-flow surface.
+- Added config-entry title sync when the battery name changes in options.
+- Added `issue_tracker` metadata and bumped beta version to `0.1.0-beta.2`.
+- Synced README, beta checklist, release summary, and handover notes.
+
+Status: In progress. Remaining items are screenshots, longer HA runtime validation, and recorder/load benchmarking.
 
 ## Task 6 - Test Suite
 

@@ -26,6 +26,7 @@ Recent work completed:
 - Exposed `model_weighting`, `ensemble_weights`, and per-model `ensemble_weight` diagnostics.
 - Reduced the Home Assistant entity surface so only the selected algorithm result is exposed as entities; alternate model outputs now live in diagnostics and coordinator logs.
 - Completed the Phase 4 baseline by applying trusted learned capacity and charge efficiency to runtime predictions and exposing profile optimization / ageing diagnostics.
+- Started Phase 5 hardening by adding Home Assistant diagnostics download support with redaction, syncing translations with the actual entity surface, and keeping config entry titles aligned when the battery name changes in options.
 - Updated roadmap and known issues to reflect implemented capacity, charge-efficiency, Peukert, model-accuracy, and adaptive ensemble learning.
 
 Validation performed:
@@ -34,9 +35,10 @@ Validation performed:
 - `ruff check custom_components/battery_remaining_time`
 - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest`
 
-Latest pushed commit at handover time:
+Latest tagged baseline before this hardening update:
 
-- `b992461 Refine battery learning and docs`
+- `9dd23cf Implement Phase 4 profile optimization`
+- Tag: `phase4-baseline-2026-06-02`
 
 ## Key Files
 
@@ -66,7 +68,7 @@ Highest priority:
 
 Quality and architecture:
 
-1. Consider moving verbose diagnostics into Home Assistant diagnostics support.
+1. Extend the new Home Assistant diagnostics download to cover any future config/profile fields without leaking entity IDs.
 2. Review whether recorder history should preserve a full prediction context window while querying incremental learning windows separately.
 3. Add richer repair guidance for partially degraded sources, such as missing current but available voltage.
 4. Measure recorder query cost with long history windows and short update intervals.
@@ -86,4 +88,4 @@ Release checklist:
 
 ## Notes
 
-The integration now compiles, passes `ruff`, and has a focused unit test suite. Phase 3 adaptive learning and the Phase 4 baseline are implemented. The most important remaining risk before beta is real Home Assistant runtime behavior, especially config-entry reloads, recorder query cost, Repairs issue display, field calibration of learned profile values, and entity registry stability.
+The integration now compiles, passes `ruff`, and has a focused unit test suite. Phase 3 adaptive learning and the Phase 4 baseline are implemented, and Phase 5 hardening has started. The most important remaining risk before beta is real Home Assistant runtime behavior, especially config-entry reloads, recorder query cost, Repairs issue display, field calibration of learned profile values, diagnostics coverage, and entity registry stability.

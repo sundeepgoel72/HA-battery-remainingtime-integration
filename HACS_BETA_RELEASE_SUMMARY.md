@@ -1,25 +1,26 @@
 # HACS Beta Release - Summary & Status
 
 **Date:** June 2, 2026  
-**Target Status:** HACS Beta Ready ✅  
-**Estimated Timeline:** 1 week to release
+**Target Status:** HACS Beta Hardening In Progress  
+**Estimated Timeline:** Pending field validation
 
 ---
 
 ## Overview
 
-The Battery Remaining Time integration is **85% ready** for HACS beta release. All critical functionality is complete and tested. The remaining work consists of documentation and configuration file finalization.
+The Battery Remaining Time integration has a solid beta baseline in git, including adaptive learning and Phase 4 profile optimization. Phase 5 is now focused on release hardening: diagnostics support, translation/config-flow consistency, Home Assistant runtime validation, and release artifacts.
 
 ---
 
 ## Work Completed This Sprint
 
-### ✅ Phase 1: Audit & Analysis
+### ✅ Completed Baseline
 
 1. **Manifest.json Review**
-   - ✅ Added version field: `0.1.0-beta.1`
+   - ✅ Added version field: `0.1.0-beta.2`
    - ✅ Added iot_class: `local_polling`
    - ✅ Added homeassistant requirement: `2024.6.0`
+   - ✅ Added issue tracker URL
 
 2. **hacs.json Review**
    - ✅ Fixed iot_class capitalization: `Local Polling` → `local_polling`
@@ -38,9 +39,9 @@ The Battery Remaining Time integration is **85% ready** for HACS beta release. A
 5. **Diagnostics Review**
    - ✅ Diagnostic sensors properly categorized
    - ✅ Rich attributes provide operational context
-   - ✅ Comprehensive health and learning metrics
+   - ✅ Home Assistant diagnostics download implemented with redaction
 
-### ✅ Phase 2: Documentation
+### ✅ Current Hardening State
 
 1. **HACS_BETA_HARDENING_CHECKLIST.md** (12.0 KB)
    - Comprehensive audit of all HACS requirements
@@ -53,24 +54,19 @@ The Battery Remaining Time integration is **85% ready** for HACS beta release. A
    - Example dashboard YAML
    - Troubleshooting guide with common issues
 
-3. **docs/SENSOR_REFERENCE.md** (13.3 KB)
-   - Complete sensor catalog (35+ sensors)
+3. **docs/SENSOR_REFERENCE.md**
+   - Current sensor catalog
    - Attribute descriptions
    - Usage examples
    - Automation examples
    - Troubleshooting matrix
 
-### ✅ Phase 3: Configuration Files
+### ✅ Low-Risk Fixes Landed
 
-1. **manifest.json**
-   - Before: Missing version, iot_class, homeassistant
-   - After: All fields properly configured
-   - ✅ Committed
-
-2. **hacs.json**
-   - Before: `"iot_class": "Local Polling"` (incorrect capitalization)
-   - After: `"iot_class": "local_polling"`
-   - ✅ Committed
+1. `diagnostics.py` added for config-entry diagnostics downloads
+2. Options flow now keeps the config-entry title aligned with the editable battery name
+3. Translation coverage updated for `depletion_voltage` and learned-voltage/efficiency diagnostic entities
+4. README, checklist, summary, and handover docs synced with the actual shipped baseline
 
 ---
 
@@ -82,7 +78,8 @@ The Battery Remaining Time integration is **85% ready** for HACS beta release. A
 - ✅ All entity names validated
 - ✅ All unique IDs consistent
 - ✅ Config flow complete and tested
-- ✅ Diagnostics comprehensive
+- ✅ Diagnostics entities comprehensive
+- ✅ Diagnostics download support present
 
 ### Documentation
 - ✅ Quick Start guide created
@@ -93,7 +90,7 @@ The Battery Remaining Time integration is **85% ready** for HACS beta release. A
 - ⚠️ Video walkthrough (optional for beta)
 
 ### Code Quality
-- ✅ No debug logging in production
+- ✅ Coordinator logging remains targeted to forecast and calibration context
 - ✅ Error handling implemented
 - ✅ Entity categories properly set
 - ✅ Device grouping correct
@@ -101,12 +98,12 @@ The Battery Remaining Time integration is **85% ready** for HACS beta release. A
 - ✅ Device classes appropriate
 
 ### Testing
-- ✅ Config flow tested (multiple battery types)
+- ✅ Config identity helpers tested
 - ✅ Sensor creation validated
 - ✅ Attribute population verified
 - ✅ Error scenarios handled gracefully
-- ⚠️ Integration tests (in progress)
-- ⚠️ Unit test coverage expansion (target 80%)
+- ⚠️ Home Assistant integration tests still missing
+- ⚠️ Unit test coverage expansion still below target
 
 ---
 
@@ -146,11 +143,11 @@ docs/adaptive-peukert-learning.md     (Existing) - Peukert learning
 4. ✅ Create beta hardening checklist
 5. **→ Next: Update README with links to new docs**
 
-### Optional Before Beta (Can Do During Beta)
-- [ ] Add screenshots of config flow steps
-- [ ] Create example dashboard YAML
-- [ ] Record video walkthrough
-- [ ] Create troubleshooting FAQ
+### Remaining Before Public Beta
+- [ ] Add screenshots of config flow, entities, and diagnostics views
+- [ ] Validate setup/reload/unload with Home Assistant test helpers
+- [ ] Benchmark recorder cost on longer history windows
+- [ ] Run longer field validation on learned Peukert, weights, and profile optimization
 
 ### Post-Beta Phase
 - [ ] Expand test coverage to 80%+
@@ -188,7 +185,7 @@ docs/adaptive-peukert-learning.md     (Existing) - Peukert learning
 
 1. **Field Validation:** Real-world deployment is primary goal
 2. **Confidence Calibration:** Will improve with user field data
-3. **Algorithm Availability:** KiBaM and Shepherd not yet implemented
+3. **Field Validation:** KiBaM, Shepherd, ensemble weighting, Peukert learning, and profile optimization still need longer runtime validation
 4. **Multi-Battery Support:** Planned for Phase 2
 5. **Translations:** English only for initial beta
 
@@ -197,9 +194,10 @@ docs/adaptive-peukert-learning.md     (Existing) - Peukert learning
 ## Risk Assessment
 
 ### Low Risk ✅
-- Configuration file updates (backward compatible)
-- Documentation additions (no code impact)
-- Sensor naming validation (already validated)
+- Diagnostics support and redaction
+- Documentation sync
+- Translation coverage updates
+- Config-entry title sync
 
 ### Medium Risk ⚠️
 - First public HACS beta (need community feedback)
@@ -239,12 +237,11 @@ docs/adaptive-peukert-learning.md     (Existing) - Peukert learning
 
 | Date | Activity | Status |
 |------|----------|--------|
-| June 2 | Audit & Fix Config Files | ✅ Done |
-| June 2-3 | Create Documentation | ✅ Done |
-| June 3-4 | Internal Testing | 🔄 In Progress |
-| June 4-5 | Community Preview | ⏳ Pending |
-| June 5-6 | Final Adjustments | ⏳ Pending |
-| June 7 | **HACS Beta Release** | 🎯 Target |
+| June 2 | Phase 4 baseline tagged | ✅ Done |
+| June 2 | Phase 5 low-risk hardening | ✅ In progress |
+| Next | HA integration/runtime validation | ⏳ Pending |
+| Next | Screenshots and release artifacts | ⏳ Pending |
+| Next | Public HACS beta tag | 🎯 Pending |
 
 ---
 

@@ -104,6 +104,7 @@ class BatteryRemainingTimeOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         """Manage options."""
         if user_input is not None:
+            _maybe_update_entry_title(self.hass, self._config_entry, user_input)
             return self.async_create_entry(title="", data=user_input)
         defaults = {**self._config_entry.data, **self._config_entry.options}
         return self.async_show_form(step_id="init", data_schema=_schema(defaults, include_advanced=True))
@@ -176,3 +177,15 @@ def _stable_unique_id(user_input: dict[str, Any]) -> str:
     }
     payload = dumps(identity, sort_keys=True, separators=(",", ":"))
     return str(uuid5(NAMESPACE_URL, f"{DOMAIN}:{payload}"))
+
+
+@callback
+def _maybe_update_entry_title(
+    hass,
+    config_entry: config_entries.ConfigEntry,
+    user_input: dict[str, Any],
+) -> None:
+    """Keep the config entry title aligned with the editable battery name."""
+    title = str(user_input.get(CONF_NAME, config_entry.title)).strip() or config_entry.title
+    if title != config_entry.title:
+        hass.config_entries.async_update_entry(config_entry, title=title)

@@ -27,7 +27,7 @@
 
 - Screenshots pending
 - Example dashboards pending
-- Detailed battery profile references pending
+- HACS/public beta summary docs need periodic sync with actual shipped version/status
 
 ## Future Work
 

@@ -49,6 +49,15 @@
       "capacity_confidence": {
         "name": "Capacity confidence"
       },
+      "learned_full_voltage": {
+        "name": "Learned full voltage"
+      },
+      "learned_empty_voltage": {
+        "name": "Learned empty voltage"
+      },
+      "learned_charge_efficiency": {
+        "name": "Learned charge efficiency"
+      },
       "learned_peukert_exponent": {
         "name": "Learned Peukert exponent"
       },

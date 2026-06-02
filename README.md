@@ -63,6 +63,7 @@ Current event states:
 - Adaptive Peukert exponent learning
 - Runtime profile optimization from learned capacity and charge efficiency
 - Prediction diagnostics
+- Home Assistant diagnostics download support
 - Local-only operation
 - HACS compatible
 
@@ -110,6 +111,8 @@ They also expose profile-optimization and ageing details such as effective capac
 
 The integration does not expose per-model SOC entities by default. Non-selected model outputs, spread, and ensemble weighting remain available through diagnostic attributes and coordinator logs.
 
+Home Assistant diagnostics support is included for config-entry troubleshooting. It redacts configured entity IDs and the battery name before export.
+
 ## Architecture
 
 Sensors → Recorder History → Event Detection → Prediction Models → Calibration Engine → Confidence Engine → Home Assistant Entities
@@ -129,6 +132,22 @@ For a detailed description see docs/ARCHITECTURE.md.
 Add the repository to HACS as a custom repository:
 
 https://github.com/sundeepgoel72/HA-battery-remainingtime-integration
+
+## Beta Readiness
+
+Phase 5 hardening is in progress. The current beta surface includes:
+
+- HACS-compatible metadata and config flow
+- Stable config-entry identity
+- Home Assistant Repairs issue for missing source sensors
+- Home Assistant diagnostics download support with redaction
+- Reduced default entity surface with deeper detail in diagnostics/logs
+
+Still pending before a public beta claim is closed:
+
+- Screenshots of config flow and entities
+- Real Home Assistant setup/reload/unload validation with longer runtime
+- Recorder cost benchmarking on larger databases
 
 ## Roadmap
 
