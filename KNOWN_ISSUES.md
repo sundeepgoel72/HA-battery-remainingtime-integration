@@ -5,6 +5,7 @@
 - Limited real-world battery datasets
 - Confidence model not yet field calibrated
 - Limited chemistry-specific validation
+- Live HACS UI install still needs end-user field confirmation even though metadata and HACS validation workflow are in place
 
 ## Algorithms
 
@@ -25,7 +26,7 @@
 
 ## Documentation
 
-- Screenshots pending
+- UI screenshots still need to be committed from a live Home Assistant frontend session
 - Example dashboards pending
 - HACS/public beta summary docs need periodic sync with actual shipped version/status
 

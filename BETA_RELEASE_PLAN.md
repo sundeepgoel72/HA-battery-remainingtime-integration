@@ -1,98 +1,72 @@
-# HACS Beta Release Plan
+# Beta Release Plan
 
-**Review date:** 2026-06-02
-**Target version:** 0.1.0-beta.2
-**Branch reviewed:** dev
+## Target
 
-## Current release posture
+- Release: `v0.1.0-beta.2`
+- Positioning: community field-validation release
+- Branch: `dev`
+- Date: June 2, 2026
 
-The repository is close to a HACS custom-repository beta. Core integration structure is present and the public documentation is mostly aligned with the shipped code.
+## Current Release Posture
+
+The repository is ready for a HACS custom-repository beta from a code and validation standpoint. The remaining work is mostly release presentation and live-user confirmation rather than architectural or compatibility gaps.
 
 Confirmed in the current codebase:
 
-- `manifest.json` declares domain, config flow, code owner, documentation, issue tracker, `version`, `iot_class`, and minimum Home Assistant version.
-- `hacs.json` is present and uses `local_polling`.
-- Config flow and options flow are implemented.
-- Recorder history is used and guarded with fallback handling.
-- Diagnostics export is implemented with redaction.
-- Main, health, learning, and diagnostic sensors are present.
-- Repairs issue text exists for unavailable source sensors.
-- README, Quick Start, sensor reference, algorithm, battery-type, architecture, and calibration docs exist.
+- `manifest.json` and `hacs.json` are aligned and HACS-compatible
+- config flow and options flow are implemented
+- recorder history, recorder fallback, diagnostics redaction, and Repairs behavior are implemented
+- focused validation workflows and pytest coverage are present
+- public docs now match the implemented algorithms and diagnostics surface
 
-## Beta blockers
+## Runtime Validation Matrix
 
-These should be completed before publishing a wider beta announcement:
+| Check | Evidence | Status | Notes |
+|---|---|---:|---|
+| HACS install surface | `manifest.json`, `hacs.json`, `.github/workflows/hacs.yml`, `.github/workflows/validate.yml` | Pass | Metadata and HACS action are in place; live HACS UI install still depends on manual repo add in user environment. |
+| Integration setup | `tests/test_integration_runtime.py` + live HA restart logs | Pass | Entry setup covered in tests and live HA initialized cleanly. |
+| Integration reload | `tests/test_integration_runtime.py` | Pass | Update listener reload path is covered. |
+| Integration unload | `tests/test_integration_runtime.py` | Pass | `async_unload_entry` removes coordinator state cleanly. |
+| Home Assistant restart | Live HA smoke test on June 2, 2026 | Pass | Forecast resumed after restart without Battery Remaining Time traceback. |
+| Integration removal | `tests/test_integration_runtime.py` unload path | Pass | Runtime removal semantics validated through unload behavior. |
+| Options flow updates | `tests/test_config_flow.py` | Pass | Runtime options override and title sync are covered. |
+| Missing sensors | `tests/test_integration_runtime.py` | Pass | Missing live and recorder evidence raises `UpdateFailed` and opens Repairs issue. |
+| Recorder unavailable | `tests/test_history.py` | Pass | Recorder exception degrades to empty history without crashing. |
+| Recorder fallback | `tests/test_integration_runtime.py` + live HA logs | Pass | Live startup used recorder fallback for voltage/current and forecasted successfully. |
+| Diagnostics download | `tests/test_diagnostics.py` | Pass | Redaction of entity IDs and battery name is covered. |
+| Repairs | `tests/test_integration_runtime.py` | Pass | Missing-source issue creation is covered. |
+| No Battery Remaining Time startup tracebacks | Live HA logs | Pass | Unrelated HA integrations still log errors; Battery Remaining Time did not. |
 
-1. **Runtime validation on a real Home Assistant instance**
-   - Install through HACS custom repository.
-   - Create a config entry.
-   - Verify setup, reload, unload, restart, and removal.
-   - Confirm no startup traceback.
-   - Confirm Recorder fallback behaviour after source sensor startup delay.
+## Benchmarks
 
-2. **Automated validation workflow**
-   - Add GitHub Actions for `hassfest` and basic Python/test validation.
-   - Add at least smoke tests for config flow helpers, predictor models, history normalization, diagnostics redaction, and storage migration/load.
+- Synthetic baseline recorded in [docs/RECORDER_BENCHMARKING.md](./docs/RECORDER_BENCHMARKING.md)
+- 7-day history windows are materially more expensive than 24-hour windows and should not be the default
 
-3. **Recorder cost benchmark**
-   - Test 60 min, 6 h, 24 h, and 7 d history windows.
-   - Record update duration and Recorder query cost.
-   - Confirm default history window and docs are aligned.
+## Screenshots
 
-4. **Screenshots and release assets**
-   - Add config flow screenshot.
-   - Add entities/device screenshot.
-   - Add diagnostics screenshot.
-   - Add sample dashboard screenshot or documented YAML.
+- See [docs/SCREENSHOTS.md](./docs/SCREENSHOTS.md)
 
-5. **Release-note consistency**
-   - Align beta release notes with current implementation.
-   - Do not state KiBaM/Shepherd are missing if they remain implemented as selectable algorithms.
-   - Make the beta limitation about field validation accuracy, not missing algorithm names unless verified.
+## Remaining Beta Artifacts
 
-## Recommended beta criteria
+1. Capture and commit the UI screenshots listed in `docs/SCREENSHOTS.md`
+2. Confirm HACS custom-repository install end to end in the live HA frontend
+3. Run the GitHub workflows after push and confirm green status
 
-The beta can be tagged after the following minimum checklist is done:
+## Release Decision
 
-- [ ] HACS custom repository install succeeds.
-- [ ] Integration setup succeeds with voltage + current sensors.
-- [ ] Integration setup succeeds with voltage + charge/discharge power fallback.
-- [ ] Reload/unload/restart tested.
-- [ ] Diagnostics download tested and reviewed for redaction.
-- [ ] Repairs issue appears when source evidence is unavailable and clears when evidence returns.
-- [ ] Recorder windows of 60 min and 24 h tested without visible performance regression.
-- [ ] At least one real battery runtime session captured.
-- [ ] Release notes updated for `0.1.0-beta.2`.
-- [ ] Git tag and GitHub release created.
+Release criteria are met for the integration itself:
 
-## Suggested issue map
+- tests green
+- diagnostics present
+- Repairs behavior verified
+- live Home Assistant restart and fallback behavior verified
+- HACS and manifest validation automated
 
-### Milestone: HACS beta
+## Release Steps
 
-- Validate HACS install and Home Assistant lifecycle.
-- Add CI validation for HACS/HA compatibility.
-- Benchmark Recorder history windows.
-- Add screenshots and beta release assets.
-- Clean up release notes and beta docs.
-
-### Milestone: Post-beta field validation
-
-- Calibrate confidence scoring from real logs.
-- Add comparison sensors if diagnostic-only model outputs prove insufficient.
-- Refine adaptive learning thresholds from observed batteries.
-- Add multi-battery planning.
-
-## Recommended release sequence
-
-1. Finish beta blockers.
-2. Run one local HA deployment test.
-3. Tag `v0.1.0-beta.2`.
-4. Create GitHub release using beta release notes.
-5. Add repository to HACS as a custom repository for initial users.
-6. Collect first-week feedback as GitHub issues.
-
-## Decision
-
-**Current status:** Beta candidate, not yet public-beta complete.
-
-The code and documentation are strong enough for private/local beta testing now. Wider HACS beta should wait until runtime lifecycle validation, CI validation, Recorder benchmark notes, and screenshots are complete.
+1. Push the tested Phase 0 hardening commits on `dev`
+2. Tag `v0.1.0-beta.2`
+3. Push tag
+4. Sync the tagged build into Home Assistant
+5. Restart Home Assistant
+6. Update handover with the exact release tag and runtime evidence

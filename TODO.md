@@ -99,8 +99,10 @@ Progress:
 - Added config-entry title sync when the battery name changes in options.
 - Added `issue_tracker` metadata and bumped beta version to `0.1.0-beta.2`.
 - Synced README, beta checklist, release summary, and handover notes.
+- Added a validation workflow with compile, manifest validation, pytest, and hassfest.
+- Added a Phase 0 runtime validation plan and synthetic recorder benchmark results.
 
-Status: In progress. Remaining items are screenshots, longer HA runtime validation, and recorder/load benchmarking.
+Status: In progress. Remaining item is committing UI screenshots from the live Home Assistant frontend.
 
 ## Task 6 - Test Suite
 
@@ -124,3 +126,4 @@ Progress:
 - Added adaptive Peukert learning unit coverage for low-confidence fallback and medium-confidence learned exponent use.
 - Added diagnostic sensor key coverage for Peukert learning statistics.
 - Added adaptive ensemble weighting unit coverage.
+- Split tests into predictor, history, storage, config-flow, diagnostics, and integration runtime coverage.

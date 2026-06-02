@@ -36,5 +36,9 @@
 - Diagnostics download support: complete
 - Translation coverage sync: complete
 - Options-flow title sync: complete
+- Runtime validation matrix: complete
+- Lightweight CI validation: complete
+- Synthetic recorder benchmarking: complete
+- Screenshot capture: pending
 - Community validation: pending
 - Contributor onboarding: pending

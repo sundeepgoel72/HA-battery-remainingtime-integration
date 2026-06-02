@@ -126,6 +126,9 @@ For a detailed description see docs/ARCHITECTURE.md.
 - docs/CALIBRATION.md
 - docs/ARCHITECTURE.md
 - docs/adaptive-peukert-learning.md
+- docs/RECORDER_BENCHMARKING.md
+- docs/SCREENSHOTS.md
+- BETA_RELEASE_PLAN.md
 
 ## Installation
 
@@ -135,7 +138,7 @@ https://github.com/sundeepgoel72/HA-battery-remainingtime-integration
 
 ## Beta Readiness
 
-Phase 5 hardening is in progress. The current beta surface includes:
+The current beta surface includes:
 
 - HACS-compatible metadata and config flow
 - Stable config-entry identity
@@ -145,9 +148,8 @@ Phase 5 hardening is in progress. The current beta surface includes:
 
 Still pending before a public beta claim is closed:
 
-- Screenshots of config flow and entities
-- Real Home Assistant setup/reload/unload validation with longer runtime
-- Recorder cost benchmarking on larger databases
+- UI screenshots captured from the live Home Assistant frontend
+- broader live-database recorder benchmarking beyond the current synthetic baseline
 
 ## Roadmap
 
@@ -158,7 +160,7 @@ Phase 1
 
 Phase 2
 
-- Comparison sensors
+- Comparison sensors if field users need them
 - Model divergence metrics
 
 Phase 3
