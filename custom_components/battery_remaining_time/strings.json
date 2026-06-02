@@ -47,10 +47,8 @@
   "entity": {
     "sensor": {
       "estimated_soc": {"name": "Estimated SOC"},
-      "usable_soc": {"name": "Usable SOC"},
       "time_to_empty": {"name": "Time to empty"},
       "time_to_full": {"name": "Time to full"},
-      "time_to_depletion": {"name": "Time to depletion"},
       "net_power": {"name": "Net power"},
       "mode": {"name": "Mode"},
       "confidence": {"name": "Confidence"},
@@ -69,19 +67,7 @@
       "peukert_observation_count": {"name": "Peukert observation count"},
       "remaining_cycles": {"name": "Remaining cycles"},
       "remaining_life": {"name": "Remaining life"},
-      "algorithm_spread": {"name": "Algorithm spread"},
-      "soc_voltage_only": {"name": "SOC voltage only"},
-      "soc_current_flow": {"name": "SOC current flow"},
-      "soc_power_flow": {"name": "SOC power flow"},
-      "soc_peukert": {"name": "SOC Peukert"},
-      "soc_hybrid_lead_acid": {"name": "SOC hybrid lead acid"},
-      "soc_temperature_compensated": {"name": "SOC temperature compensated"},
-      "soc_kibam": {"name": "SOC KiBaM"},
-      "soc_shepherd": {"name": "SOC Shepherd"},
-      "soc_adaptive_hybrid": {"name": "SOC adaptive hybrid"},
-      "soc_ensemble": {"name": "SOC ensemble"},
-      "configured_depletion_voltage": {"name": "Configured depletion voltage"},
-      "learned_depletion_voltage": {"name": "Learned depletion voltage"}
+      "algorithm_spread": {"name": "Algorithm spread"}
     }
   },
   "issues": {

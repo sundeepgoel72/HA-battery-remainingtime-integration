@@ -92,7 +92,8 @@ Enable in **Settings** → **Devices & Services** → **Entities** to see:
 - **Battery Health:** Estimated battery health %
 - **Learned Capacity:** Actual measured capacity vs. configured
 - **Learned Peukert Exponent:** Adaptive runtime correction factor
-- **Per-Model SOC:** Individual algorithm predictions for debugging
+
+Non-selected model outputs are kept out of the entity list to reduce clutter. They remain visible in diagnostic attributes and Home Assistant logs.
 
 ---
 
@@ -161,6 +162,7 @@ segments:
 3. Ensure history window (default 60 min) captures full charge/discharge events
 4. Check **calibration_status** sensor for learning progress
 5. Verify battery type selection matches actual battery
+6. Review Home Assistant debug logs if you need to compare alternate model outputs
 
 ### SOC jumps unexpectedly
 
@@ -172,6 +174,7 @@ segments:
 3. Increase history window to 120-240 minutes
 4. Verify current/power sensors are calibrated
 5. Check for rapid SOC changes in **algorithm_spread** sensor
+6. Inspect diagnostic attributes or debug logs for alternate model disagreement
 
 ### Configuration Errors
 

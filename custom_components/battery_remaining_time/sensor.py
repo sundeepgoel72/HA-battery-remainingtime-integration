@@ -59,19 +59,6 @@ EXPECTED_CYCLE_LIFE_BY_TYPE = {
     BATTERY_TYPE_CUSTOM: DEFAULT_EXPECTED_CYCLE_LIFE,
 }
 
-MODEL_SOC_SENSOR_KEYS = (
-    "voltage_only",
-    "current_flow",
-    "power_flow",
-    "peukert",
-    "hybrid_lead_acid",
-    "temperature_compensated",
-    "kibam",
-    "shepherd",
-    "adaptive_hybrid",
-    "ensemble",
-)
-
 SENSOR_NAMES = {
     "estimated_soc": "Estimated SOC",
     "time_to_empty": "Time to empty",
@@ -98,19 +85,6 @@ SENSOR_NAMES = {
     "algorithm_spread": "Algorithm spread",
     "prediction_health": "Prediction health",
     "calibration_status": "Calibration status",
-}
-
-MODEL_SENSOR_NAMES = {
-    "voltage_only": "SOC voltage only",
-    "current_flow": "SOC current flow",
-    "power_flow": "SOC power flow",
-    "peukert": "SOC Peukert",
-    "hybrid_lead_acid": "SOC hybrid lead acid",
-    "temperature_compensated": "SOC temperature compensated",
-    "kibam": "SOC KiBaM",
-    "shepherd": "SOC Shepherd",
-    "adaptive_hybrid": "SOC adaptive hybrid",
-    "ensemble": "SOC ensemble",
 }
 
 
@@ -274,7 +248,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator: BatteryRemainingTimeCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[SensorEntity] = [BatteryRemainingTimeSensor(coordinator, entry, description) for description in SENSORS]
     entities.extend(BatteryStatsSensor(coordinator, entry, description) for description in HEALTH_SENSORS)
-    entities.extend(BatteryModelSocSensor(coordinator, entry, model_key) for model_key in MODEL_SOC_SENSOR_KEYS)
     entities.append(BatteryAlgorithmSpreadSensor(coordinator, entry))
     entities.append(BatteryPredictionHealthSensor(coordinator, entry))
     entities.append(BatteryCalibrationStatusSensor(coordinator, entry))
@@ -511,45 +484,6 @@ class BatteryStatsSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], Sen
             "health_observation_count": self.coordinator.stats_store.stats.health_observation_count,
             "capacity_observation_count": self.coordinator.stats_store.stats.capacity_observation_count,
             "peukert_observation_count": self.coordinator.stats_store.stats.peukert_observation_count,
-        }
-
-
-class BatteryModelSocSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
-    """Dedicated per-model SOC comparison sensor."""
-
-    _attr_has_entity_name = False
-    _attr_entity_registry_enabled_default = False
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_native_unit_of_measurement = PERCENTAGE
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_device_class = SensorDeviceClass.BATTERY
-
-    def __init__(self, coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry, model_key: str) -> None:
-        super().__init__(coordinator)
-        self._entry = entry
-        self._model_key = model_key
-        self._attr_name = MODEL_SENSOR_NAMES.get(model_key, f"SOC {model_key}")
-        self._attr_unique_id = f"{entry.entry_id}_soc_{model_key}"
-        self._attr_suggested_object_id = _object_id(entry, f"soc_{model_key}")
-        self._attr_device_info = _device_info(entry)
-
-    @property
-    def native_value(self) -> float | str | None:
-        return self.coordinator.model_telemetry.get(self._model_key, {}).get("soc_percent")
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        telemetry = self.coordinator.model_telemetry.get(self._model_key, {})
-        selected = self.coordinator.data
-        return {
-            "model": self._model_key,
-            "confidence": telemetry.get("confidence"),
-            "reason": telemetry.get("reason"),
-            "algorithm_spread": self.coordinator.algorithm_spread,
-            "ensemble_weight": self.coordinator.ensemble_weights.get(self._model_key),
-            "selected_algorithm": selected.algorithm if selected else None,
-            "selected_soc_percent": selected.soc_percent if selected else None,
-            **_battery_profile_attrs(self._entry),
         }
 
 

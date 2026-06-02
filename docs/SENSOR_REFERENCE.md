@@ -313,39 +313,25 @@ These sensors track the learned Peukert exponent, a critical parameter for disch
 
 ---
 
-## Per-Model SOC Sensors
+## Model Comparison Visibility
 
-These comparison sensors show individual algorithm predictions. Disabled by default.
+The integration exposes only the selected algorithm result as primary Home Assistant entities to keep the entity list manageable.
 
-### SOC {Algorithm Name}
-**Entity ID:** `sensor.{battery_name}_soc_{algorithm}`  
-**Type:** Percentage (0-100%)  
-**Unit:** `%`  
-**Category:** Diagnostic  
-**Enabled by Default:** No
+Alternate model outputs remain available through:
 
-**Available Algorithms:**
-- `soc_voltage_only` - Voltage OCV method
-- `soc_current_flow` - Coulomb counting
-- `soc_power_flow` - Power integration
-- `soc_peukert` - Peukert runtime
-- `soc_hybrid_lead_acid` - OCV + Coulomb hybrid
-- `soc_temperature_compensated` - Temperature-corrected OCV
-- `soc_kibam` - KiBaM model (planned)
-- `soc_shepherd` - Shepherd model (planned)
-- `soc_adaptive_hybrid` - Learning hybrid
-- `soc_ensemble` - Weighted average of all models
+- `algorithm_spread` diagnostic attributes
+- `prediction_health` diagnostic attributes
+- `calibration_status` diagnostic attributes
+- Home Assistant debug logs from `custom_components.battery_remaining_time.coordinator`
 
-**Use Cases:**
-- Debug prediction divergence
-- Validate algorithm selection
-- Identify sensor quality issues
+The relevant diagnostic attributes include:
 
-**Attributes:**
-- `confidence` - This algorithm's confidence
-- `model` - Model name
-- `algorithm_spread` - Overall system divergence
-- `selected_algorithm` - Which model is currently used
+- `model_outputs`
+- `model_accuracy`
+- `model_weighting`
+- `ensemble_weights`
+- `algorithm_outlier`
+- `algorithm_stddev`
 
 ---
 

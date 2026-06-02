@@ -24,6 +24,7 @@ Recent work completed:
 - Added focused pytest coverage for Peukert low-confidence fallback, medium-confidence learned exponent use, and diagnostic sensor registration.
 - Completed Phase 3 adaptive learning by adding bounded adaptive ensemble weighting from learned model accuracy.
 - Exposed `model_weighting`, `ensemble_weights`, and per-model `ensemble_weight` diagnostics.
+- Reduced the Home Assistant entity surface so only the selected algorithm result is exposed as entities; alternate model outputs now live in diagnostics and coordinator logs.
 - Updated roadmap and known issues to reflect implemented capacity, charge-efficiency, Peukert, model-accuracy, and adaptive ensemble learning.
 
 Validation performed:
@@ -70,6 +71,7 @@ Quality and architecture:
 4. Measure recorder query cost with long history windows and short update intervals.
 5. Validate adaptive Peukert learning against real discharge cycles in Home Assistant before treating learned exponent confidence as beta-ready.
 6. Validate adaptive ensemble weights against field data before treating weighting confidence as final.
+7. Start Phase 4 work on battery ageing estimation and profile optimization after the current entity-surface simplification settles in HA.
 
 Release checklist:
 

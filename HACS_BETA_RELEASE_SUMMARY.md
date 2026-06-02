@@ -167,7 +167,7 @@ docs/adaptive-peukert-learning.md     (Existing) - Peukert learning
 - **Health Sensors:** 10 sensors documented
 - **Learning Sensors:** 3 sensors documented
 - **Diagnostic Sensors:** 2 sensors documented
-- **Per-Model Sensors:** 10 sensors documented
+- **Model Comparison Surface:** Moved to diagnostics and logs to reduce entity clutter
 - **Total Coverage:** 35+ sensors with full documentation
 
 ### Configuration

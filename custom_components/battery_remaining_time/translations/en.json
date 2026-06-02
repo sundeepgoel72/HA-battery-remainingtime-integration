@@ -22,6 +22,33 @@
       "algorithm": {
         "name": "Algorithm"
       },
+      "prediction_health": {
+        "name": "Prediction health"
+      },
+      "calibration_status": {
+        "name": "Calibration status"
+      },
+      "battery_health": {
+        "name": "Battery health"
+      },
+      "battery_useful_life": {
+        "name": "Battery useful life"
+      },
+      "equivalent_cycles": {
+        "name": "Equivalent cycles"
+      },
+      "health_confidence": {
+        "name": "Health confidence"
+      },
+      "learned_capacity": {
+        "name": "Learned capacity"
+      },
+      "capacity_retention": {
+        "name": "Capacity retention"
+      },
+      "capacity_confidence": {
+        "name": "Capacity confidence"
+      },
       "learned_peukert_exponent": {
         "name": "Learned Peukert exponent"
       },
@@ -30,6 +57,15 @@
       },
       "peukert_observation_count": {
         "name": "Peukert observation count"
+      },
+      "remaining_cycles": {
+        "name": "Remaining cycles"
+      },
+      "remaining_life": {
+        "name": "Remaining life"
+      },
+      "algorithm_spread": {
+        "name": "Algorithm spread"
       }
     }
   },

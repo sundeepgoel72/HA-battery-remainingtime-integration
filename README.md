@@ -26,7 +26,7 @@ The integration degrades gracefully when some sensors are unavailable.
 4. Multiple prediction algorithms estimate SOC, TTE and TTF.
 5. Calibration evidence is collected from observed battery behaviour.
 6. Confidence scores are generated.
-7. Results are exposed as Home Assistant entities.
+7. The selected algorithm result is exposed as Home Assistant entities, while alternate model outputs remain in diagnostics and logs.
 
 ### Recorder History Usage
 
@@ -106,6 +106,8 @@ Diagnostic entities include:
 
 Diagnostics expose confidence, algorithm selection, event state, calibration readiness, history window and calibration evidence.
 
+The integration does not expose per-model SOC entities by default. Non-selected model outputs, spread, and ensemble weighting remain available through diagnostic attributes and coordinator logs.
+
 ## Architecture
 
 Sensors → Recorder History → Event Detection → Prediction Models → Calibration Engine → Confidence Engine → Home Assistant Entities
@@ -147,6 +149,8 @@ Phase 3
 Phase 4
 
 - Battery ageing estimation
+- Profile optimization
+- Longer-term field calibration
 
 ## Project Goal
 
