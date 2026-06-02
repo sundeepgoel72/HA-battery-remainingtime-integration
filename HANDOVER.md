@@ -27,18 +27,29 @@ Recent work completed:
 - Reduced the Home Assistant entity surface so only the selected algorithm result is exposed as entities; alternate model outputs now live in diagnostics and coordinator logs.
 - Completed the Phase 4 baseline by applying trusted learned capacity and charge efficiency to runtime predictions and exposing profile optimization / ageing diagnostics.
 - Started Phase 5 hardening by adding Home Assistant diagnostics download support with redaction, syncing translations with the actual entity surface, and keeping config entry titles aligned when the battery name changes in options.
+- Expanded Phase 0 validation into dedicated predictor, history, storage, config-flow, diagnostics, and runtime test files.
+- Added `.github/workflows/validate.yml` for syntax checks, manifest validation, pytest, and hassfest.
+- Added `BETA_RELEASE_PLAN.md` with a concrete runtime validation matrix.
+- Added `docs/RECORDER_BENCHMARKING.md` with measured synthetic 60 min / 6 hr / 24 hr / 7 day history-window costs.
+- Added `docs/SCREENSHOTS.md` to track required HACS/public-beta UI captures.
+- Rewrote the HACS beta summary/checklist docs so they match the actual codebase and validation evidence.
 - Updated roadmap and known issues to reflect implemented capacity, charge-efficiency, Peukert, model-accuracy, and adaptive ensemble learning.
 
 Validation performed:
 
-- `python -m compileall custom_components/battery_remaining_time`
-- `ruff check custom_components/battery_remaining_time`
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest`
+- `python -m compileall custom_components/battery_remaining_time tests`
+- `ruff check custom_components/battery_remaining_time tests`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q`
+- Home Assistant restart smoke test after syncing the release build into `/mnt/ssd/homeassistant/config/custom_components/battery_remaining_time`
+- Live Home Assistant log verification for Battery Remaining Time forecast updates and recorder fallback behavior
 
-Latest tagged baseline before this hardening update:
+Latest release baseline:
 
-- `9dd23cf Implement Phase 4 profile optimization`
-- Tag: `phase4-baseline-2026-06-02`
+- `phase4-baseline-2026-06-02`
+- `e271a25 Advance Phase 5 beta hardening`
+- `b1ed24b Expand Phase 0 validation suite`
+- `ed9e8ad Prepare Phase 0 beta release artifacts`
+- Release tag to use: `v0.1.0-beta.2`
 
 ## Key Files
 
@@ -59,33 +70,20 @@ Latest tagged baseline before this hardening update:
 
 ## Remaining Work
 
-Highest priority:
+Release-surface follow-up:
 
-1. Add Home Assistant integration tests for setup, reload, unload, and entity registry stability.
-2. Add config-flow tests with Home Assistant test helpers for duplicate setup and options reload.
-3. Add recorder integration tests against Home Assistant recorder fixtures.
-4. Add manual runtime validation in a real Home Assistant instance.
+1. Commit real frontend screenshots referenced in `docs/SCREENSHOTS.md`.
+2. Confirm HACS custom-repository install flow end to end in the live user HA frontend.
+3. Run the new GitHub validation workflows on GitHub after push and confirm green status.
 
-Quality and architecture:
+Post-beta validation:
 
-1. Extend the new Home Assistant diagnostics download to cover any future config/profile fields without leaking entity IDs.
-2. Review whether recorder history should preserve a full prediction context window while querying incremental learning windows separately.
-3. Add richer repair guidance for partially degraded sources, such as missing current but available voltage.
-4. Measure recorder query cost with long history windows and short update intervals.
-5. Validate adaptive Peukert learning against real discharge cycles in Home Assistant before treating learned exponent confidence as beta-ready.
-6. Validate adaptive ensemble weights against field data before treating weighting confidence as final.
-7. Validate Phase 4 ageing and profile optimization against longer field data before treating optimized capacity/efficiency as final.
-
-Release checklist:
-
-1. Run HACS validation workflow in GitHub Actions.
-2. Test setup, reload, and unload inside a real Home Assistant instance.
-3. Confirm entity registry stability after changing the integration name and options.
-4. Confirm diagnostic entities appear as diagnostic in Home Assistant UI.
-5. Exercise startup when source sensors are unavailable and later become available.
-6. Verify recorder database load with long history windows.
-7. Tag beta only after the Home Assistant integration smoke test passes.
+1. Validate adaptive Peukert learning against real discharge cycles before treating learned exponent confidence as field-trusted.
+2. Validate adaptive ensemble weights against field data before treating weighting confidence as final.
+3. Validate Phase 4 ageing/profile optimization against longer field data before treating optimized capacity/efficiency as final.
+4. Benchmark recorder cost against a real large recorder database, not only the current synthetic benchmark.
+5. Confirm entity registry stability after real option edits and long-lived upgrades.
 
 ## Notes
 
-The integration now compiles, passes `ruff`, and has a focused unit test suite. Phase 3 adaptive learning and the Phase 4 baseline are implemented, and Phase 5 hardening has started. The most important remaining risk before beta is real Home Assistant runtime behavior, especially config-entry reloads, recorder query cost, Repairs issue display, field calibration of learned profile values, diagnostics coverage, and entity registry stability.
+The integration now compiles, passes `ruff`, and has a broader Phase 0 validation suite (`31 passed, 1 warning`). Phase 3 adaptive learning and the Phase 4 baseline are implemented, and the Phase 0 beta hardening pass is effectively complete apart from frontend screenshot capture and live HACS-install confirmation. The main remaining risks have shifted from structural correctness to field validation quality, recorder scaling on real databases, and long-lived runtime behavior in user deployments.
