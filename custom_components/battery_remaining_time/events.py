@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .predictor import BatteryInputs, BatteryPrediction, MODE_DISCHARGING
+from .predictor import BatteryInputs, BatteryPrediction
 
 STATE_UNKNOWN = "unknown"
 STATE_RESTING = "resting"

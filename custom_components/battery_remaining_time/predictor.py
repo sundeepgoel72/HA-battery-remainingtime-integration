@@ -466,6 +466,96 @@ def _resting_weight_multiplier(algorithm: str) -> float:
     }.get(algorithm, 1.0)
 
 
+def ensemble_model_weights(inputs: BatteryInputs, predictions: dict[str, BatteryPrediction]) -> dict[str, float]:
+    """Return bounded normalized adaptive ensemble weights.
+
+    Every model with a SOC estimate remains active. Learned accuracy can move a
+    model up or down, but individual weights are capped so a single model cannot
+    dominate the ensemble after a few calibration anchors.
+    """
+    net, _ = resolve_net_power(inputs)
+    resting = _is_resting_like(inputs, net)
+    confidence_weights = {"high": 1.0, "medium": 0.55, "low": 0.20}
+    raw_weights: dict[str, float] = {}
+
+    for algorithm, prediction in predictions.items():
+        if algorithm == ALGORITHM_ENSEMBLE or prediction.soc_percent is None:
+            continue
+
+        confidence_weight = confidence_weights.get(prediction.confidence, 0.20)
+        context_weight = _resting_weight_multiplier(algorithm) if resting else 1.0
+        accuracy = inputs.model_accuracy.get(algorithm)
+        accuracy_weight = 1.0
+        if accuracy is not None:
+            accuracy_weight = 0.50 + clamp(float(accuracy), 0.05, 1.0)
+
+        raw_weights[algorithm] = clamp(confidence_weight * context_weight * accuracy_weight, 0.05, 4.0)
+
+    return _normalize_capped_weights(raw_weights, max_weight=0.35, min_weight=0.02)
+
+
+def ensemble_model_weighting_strategy(inputs: BatteryInputs, predictions: dict[str, BatteryPrediction]) -> dict[str, float | int | str | bool]:
+    """Return diagnostic metadata describing adaptive ensemble weighting."""
+    net, _ = resolve_net_power(inputs)
+    active_models = [
+        algorithm
+        for algorithm, prediction in predictions.items()
+        if algorithm != ALGORITHM_ENSEMBLE and prediction.soc_percent is not None
+    ]
+    return {
+        "strategy": "adaptive_accuracy_bounded",
+        "active_model_count": len(active_models),
+        "accuracy_model_count": sum(1 for model in active_models if model in inputs.model_accuracy),
+        "resting_context": _is_resting_like(inputs, net),
+        "max_model_weight": 0.35,
+        "min_model_weight": 0.02,
+    }
+
+
+def _normalize_capped_weights(raw_weights: dict[str, float], *, max_weight: float, min_weight: float) -> dict[str, float]:
+    """Normalize model weights while keeping every model active and bounded."""
+    if not raw_weights:
+        return {}
+
+    total = sum(max(weight, 0.0) for weight in raw_weights.values())
+    if total <= 0:
+        even_weight = round(1.0 / len(raw_weights), 4)
+        return {model: even_weight for model in raw_weights}
+
+    cap = max(max_weight, 1.0 / len(raw_weights))
+    weights = {model: max(weight, 0.0) / total for model, weight in raw_weights.items()}
+
+    capped_models: set[str] = set()
+    for _ in range(len(weights)):
+        over_cap = {model for model, weight in weights.items() if weight > cap and model not in capped_models}
+        if not over_cap:
+            break
+        capped_models.update(over_cap)
+        remaining_weight = max(1.0 - (len(capped_models) * cap), 0.0)
+        flexible_models = [model for model in weights if model not in capped_models]
+        flexible_total = sum(max(raw_weights[model], 0.0) for model in flexible_models)
+        for model in capped_models:
+            weights[model] = cap
+        if flexible_total <= 0:
+            continue
+        for model in flexible_models:
+            weights[model] = (max(raw_weights[model], 0.0) / flexible_total) * remaining_weight
+
+    if len(weights) * min_weight < 1.0:
+        low_models = {model for model, weight in weights.items() if weight < min_weight}
+        if low_models:
+            remaining_weight = max(1.0 - (len(low_models) * min_weight), 0.0)
+            flexible_models = [model for model in weights if model not in low_models]
+            flexible_total = sum(weights[model] for model in flexible_models)
+            for model in low_models:
+                weights[model] = min_weight
+            if flexible_total > 0:
+                for model in flexible_models:
+                    weights[model] = (weights[model] / flexible_total) * remaining_weight
+
+    return {model: round(weight, 4) for model, weight in sorted(weights.items())}
+
+
 def _apply_depletion_metrics(inputs: BatteryInputs, prediction: BatteryPrediction) -> BatteryPrediction:
     """Populate practical usable SOC and time-to-depletion on one prediction."""
     usable = practical_usable_soc(inputs, prediction.soc_percent)
@@ -480,43 +570,32 @@ def ensemble_from_predictions(inputs: BatteryInputs, predictions: dict[str, Batt
     """Build ensemble result from already-computed model outputs."""
     net, src = resolve_net_power(inputs)
     resting = _is_resting_like(inputs, net)
-    if resting:
-        anchor_soc = _resting_ocv_anchor_soc(predictions)
-        if anchor_soc is not None:
-            tte, ttf = runtime_from_soc(inputs, anchor_soc, net, peukert=True, temp=True)
-            return _prediction(
-                ALGORITHM_ENSEMBLE,
-                anchor_soc,
-                net,
-                tte,
-                ttf,
-                "high",
-                f"resting OCV/Shepherd anchor; suppressed drifted history models; {src}",
-            )
-
-    confidence_weights = {"high": 1.0, "medium": 0.55, "low": 0.20}
+    anchor_soc = _resting_ocv_anchor_soc(predictions) if resting else None
+    weights = ensemble_model_weights(inputs, predictions)
     terms: list[tuple[float, float]] = []
     learned_used = False
     for algorithm, prediction in predictions.items():
         if prediction.soc_percent is None:
             continue
-        confidence_weight = confidence_weights[prediction.confidence]
-        final_weight = confidence_weight * (_resting_weight_multiplier(algorithm) if resting else 1.0)
-        learned_accuracy = inputs.model_accuracy.get(algorithm)
-        if learned_accuracy is not None:
+        final_weight = weights.get(algorithm)
+        if final_weight is None:
+            continue
+        if algorithm in inputs.model_accuracy:
             learned_used = True
-            accuracy_weight = clamp(float(learned_accuracy), 0.05, 1.0)
-            final_weight *= (0.70) + (0.30 * accuracy_weight)
         terms.append((prediction.soc_percent, final_weight))
 
     soc = _weighted_average(terms)
+    if anchor_soc is not None and soc is not None:
+        soc = (anchor_soc * 0.70) + (soc * 0.30)
     tte, ttf = runtime_from_soc(inputs, soc, net, peukert=True, temp=True)
     conf = "high" if len(terms) >= 4 else "medium" if terms else "low"
     reason = f"ensemble of {len(terms)} models; {src}"
     if resting:
         reason += "; resting voltage-biased weighting"
+    if anchor_soc is not None:
+        reason += "; resting OCV/Shepherd anchor blend"
     if learned_used:
-        reason += "; adaptive accuracy weighting"
+        reason += "; bounded adaptive accuracy weighting"
     return _prediction(ALGORITHM_ENSEMBLE, soc, net, tte, ttf, conf, reason)
 
 

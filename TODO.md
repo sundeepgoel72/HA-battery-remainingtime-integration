@@ -58,7 +58,17 @@ Update diagnostics.
 
 This moves the project toward a genuine self-learning predictor.
 
-Status: Pending.
+Completed:
+
+- Uses learned `model_accuracy` statistics at forecast time.
+- Weights more accurate models higher.
+- Keeps every model with a valid SOC estimate active.
+- Caps normalized model weights to prevent runaway dominance.
+- Exposes `model_weighting` and `ensemble_weights` in diagnostic attributes.
+- Adds per-model `ensemble_weight` attributes on model SOC sensors.
+- Adds focused pytest coverage for weighting behaviour and diagnostics metadata.
+
+Status: Complete pending field validation.
 
 ## Task 5 - HACS Beta Hardening
 
@@ -105,3 +115,4 @@ Progress:
 
 - Added adaptive Peukert learning unit coverage for low-confidence fallback and medium-confidence learned exponent use.
 - Added diagnostic sensor key coverage for Peukert learning statistics.
+- Added adaptive ensemble weighting unit coverage.

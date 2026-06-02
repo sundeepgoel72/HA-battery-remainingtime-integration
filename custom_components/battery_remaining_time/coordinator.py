@@ -36,6 +36,8 @@ from .predictor import (
     HistoryPoint,
     algorithm_spread,
     all_model_predictions,
+    ensemble_model_weighting_strategy,
+    ensemble_model_weights,
     prediction_to_telemetry,
 )
 from .runtime import runtime_config
@@ -76,6 +78,8 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
     model_predictions: dict[str, BatteryPrediction]
     model_telemetry: dict[str, dict[str, float | str | None]]
     algorithm_spread: float | None
+    ensemble_weights: dict[str, float]
+    model_weighting: dict[str, float | int | str | bool]
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize coordinator."""
@@ -86,6 +90,8 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         self.model_predictions = {}
         self.model_telemetry = {}
         self.algorithm_spread = None
+        self.ensemble_weights = {}
+        self.model_weighting = {}
         self.stats_store = BatteryStatsStore(hass, entry.entry_id)
         data = runtime_config(entry)
         self._last_history_fetch_timestamp: datetime | None = None
@@ -195,6 +201,8 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             model_accuracy=self.stats_store.stats.model_accuracy,
         )
         self.model_predictions = all_model_predictions(inputs)
+        self.ensemble_weights = ensemble_model_weights(inputs, self.model_predictions)
+        self.model_weighting = ensemble_model_weighting_strategy(inputs, self.model_predictions)
         self.model_telemetry = {
             algorithm: prediction_to_telemetry(prediction)
             for algorithm, prediction in self.model_predictions.items()
@@ -203,10 +211,11 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         result = self.model_predictions.get(selected_algorithm) or self.model_predictions[DEFAULT_ALGORITHM]
 
         _LOGGER.debug(
-            "Model comparison: spread=%s outputs=%s accuracy=%s",
+            "Model comparison: spread=%s outputs=%s accuracy=%s weights=%s",
             self.algorithm_spread,
             {algorithm: telemetry.get("soc_percent") for algorithm, telemetry in self.model_telemetry.items()},
             self.stats_store.stats.model_accuracy,
+            self.ensemble_weights,
         )
 
         self.event_state = detect_event_state(inputs, result)

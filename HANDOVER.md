@@ -22,6 +22,9 @@ Recent work completed:
 - Added adaptive Peukert exponent learning from recorder-backed discharge cycles ending at low-battery calibration anchors.
 - Exposed `learned_peukert_exponent`, `peukert_confidence`, and `peukert_observation_count` as diagnostic statistics.
 - Added focused pytest coverage for Peukert low-confidence fallback, medium-confidence learned exponent use, and diagnostic sensor registration.
+- Completed Phase 3 adaptive learning by adding bounded adaptive ensemble weighting from learned model accuracy.
+- Exposed `model_weighting`, `ensemble_weights`, and per-model `ensemble_weight` diagnostics.
+- Updated roadmap and known issues to reflect implemented capacity, charge-efficiency, Peukert, model-accuracy, and adaptive ensemble learning.
 
 Validation performed:
 
@@ -66,6 +69,7 @@ Quality and architecture:
 3. Add richer repair guidance for partially degraded sources, such as missing current but available voltage.
 4. Measure recorder query cost with long history windows and short update intervals.
 5. Validate adaptive Peukert learning against real discharge cycles in Home Assistant before treating learned exponent confidence as beta-ready.
+6. Validate adaptive ensemble weights against field data before treating weighting confidence as final.
 
 Release checklist:
 
@@ -79,4 +83,4 @@ Release checklist:
 
 ## Notes
 
-The integration now compiles, passes `ruff`, and has a focused unit test suite. The most important remaining risk before beta is real Home Assistant runtime behavior, especially config-entry reloads, recorder query cost, Repairs issue display, and entity registry stability.
+The integration now compiles, passes `ruff`, and has a focused unit test suite. Phase 3 adaptive learning is implemented. The most important remaining risk before beta is real Home Assistant runtime behavior, especially config-entry reloads, recorder query cost, Repairs issue display, adaptive-learning field calibration, and entity registry stability.

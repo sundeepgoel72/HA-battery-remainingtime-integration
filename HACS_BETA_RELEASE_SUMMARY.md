@@ -154,7 +154,7 @@ docs/adaptive-peukert-learning.md     (Existing) - Peukert learning
 
 ### Post-Beta Phase
 - [ ] Expand test coverage to 80%+
-- [ ] Implement adaptive ensemble weighting
+- [x] Implement adaptive ensemble weighting
 - [ ] Add multi-battery support planning
 - [ ] Refine confidence calibration from field data
 

@@ -8,15 +8,15 @@
 
 ## Algorithms
 
-- KiBaM not implemented
-- Shepherd not implemented
-- Ensemble weighting requires field data
+- KiBaM and Shepherd are implemented, but still need field validation across battery banks.
+- Adaptive ensemble weighting is implemented with bounded learned weights, but confidence calibration still needs field data.
 
 ## Calibration
 
-- Capacity learning not yet implemented
-- Charge efficiency learning not yet implemented
-- Battery ageing estimation not yet implemented
+- Capacity learning is implemented and needs longer field validation.
+- Charge efficiency learning is implemented and needs longer field validation.
+- Peukert exponent learning is implemented and needs real discharge-cycle validation.
+- Battery ageing estimation is partially implemented through health/cycle metrics, but profile optimization is still pending.
 
 ## Performance
 

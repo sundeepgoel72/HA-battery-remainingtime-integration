@@ -2,33 +2,36 @@
 
 ## Phase 1 - Validation
 
-- Real-world deployment
-- Comparison sensors
-- Algorithm spread metric
-- Confidence validation
-- Documentation completion
+- Real-world deployment: in progress
+- Comparison sensors: complete
+- Algorithm spread metric: complete
+- Confidence validation: in progress with field data
+- Documentation completion: mostly complete
 
 ## Phase 2 - Model Expansion
 
-- KiBaM
-- Shepherd
-- Temperature corrected model
-- Ensemble weighting
+- KiBaM: complete
+- Shepherd: complete
+- Temperature corrected model: complete
+- Ensemble weighting: complete
 
 ## Phase 3 - Adaptive Learning
 
-- Capacity learning
-- Charge efficiency learning
-- Adaptive calibration
+- Capacity learning: complete
+- Charge efficiency learning: complete
+- Peukert exponent learning: complete
+- Model accuracy learning: complete
+- Adaptive calibration: complete
+- Bounded adaptive ensemble weighting: complete
 
 ## Phase 4 - Battery Intelligence
 
-- Battery ageing estimation
-- Health scoring
-- Profile optimization
+- Battery ageing estimation: in progress
+- Health scoring: complete
+- Profile optimization: pending
 
 ## Phase 5 - Public Release
 
-- HACS publication
-- Community validation
-- Contributor onboarding
+- HACS publication: beta preparation in progress
+- Community validation: pending
+- Contributor onboarding: pending
