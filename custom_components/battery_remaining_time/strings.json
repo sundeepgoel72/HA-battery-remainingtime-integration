@@ -47,8 +47,10 @@
   "entity": {
     "sensor": {
       "estimated_soc": {"name": "Estimated SOC"},
+      "usable_soc": {"name": "Usable SOC"},
       "time_to_empty": {"name": "Time to empty"},
       "time_to_full": {"name": "Time to full"},
+      "time_to_depletion": {"name": "Time to depletion"},
       "net_power": {"name": "Net power"},
       "mode": {"name": "Mode"},
       "confidence": {"name": "Confidence"},
@@ -77,13 +79,15 @@
       "soc_kibam": {"name": "SOC KiBaM"},
       "soc_shepherd": {"name": "SOC Shepherd"},
       "soc_adaptive_hybrid": {"name": "SOC adaptive hybrid"},
-      "soc_ensemble": {"name": "SOC ensemble"}
+      "soc_ensemble": {"name": "SOC ensemble"},
+      "configured_depletion_voltage": {"name": "Configured depletion voltage"},
+      "learned_depletion_voltage": {"name": "Learned depletion voltage"}
     }
   },
   "issues": {
     "source_unavailable": {
       "title": "Battery source sensors are unavailable",
-      "description": "Battery Remaining Time cannot calculate a forecast because the configured voltage sensor and current or power sensors are unavailable, and recorder fallback data is insufficient. Check that the configured source sensors exist and have numeric states."
+      "description": "Battery Remaining Time cannot calculate a forecast because the configured voltage sensor and current or power sensors are unavailable, and recorder fallback data is insufficient."
     }
   }
 }

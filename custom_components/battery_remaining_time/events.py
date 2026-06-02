@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .predictor import BatteryInputs, BatteryPrediction
+from .predictor import BatteryInputs, BatteryPrediction, MODE_DISCHARGING
 
 STATE_UNKNOWN = "unknown"
 STATE_RESTING = "resting"
@@ -14,6 +14,7 @@ STATE_FLOAT = "float"
 STATE_ABSORPTION = "absorption"
 STATE_LOW_BATTERY = "low_battery"
 STATE_HEAVY_DISCHARGE = "heavy_discharge"
+STATE_DEPLETION_IMMINENT = "depletion_imminent"
 
 
 @dataclass(slots=True)
@@ -32,12 +33,22 @@ def detect_event_state(inputs: BatteryInputs, prediction: BatteryPrediction) -> 
     current = inputs.current
     net_power = prediction.net_power_w
     soc = prediction.soc_percent
+    usable_soc = prediction.usable_soc_percent
 
     if voltage is None:
         return BatteryEventState(STATE_UNKNOWN, ["missing_voltage"])
 
     nominal = max(inputs.nominal_voltage, 1.0)
     normalized_voltage = voltage * 12.0 / nominal
+
+    # Check depletion imminent first (high priority)
+    if usable_soc is not None and usable_soc <= 5.0 and net_power is not None and net_power < -10:
+        evidence.append("usable_soc_below_5")
+        if inputs.depletion_voltage is not None and voltage <= inputs.depletion_voltage + 0.5:
+            evidence.append("voltage_near_depletion")
+        if current is not None and abs(current) > max(inputs.capacity_ah * 0.01, 1.0):
+            evidence.append("discharge_continuing")
+        return BatteryEventState(STATE_DEPLETION_IMMINENT, evidence, calibration_anchor=True)
 
     if current is not None and abs(current) <= max(inputs.capacity_ah * 0.01, 1.0):
         evidence.append("current_near_zero")
