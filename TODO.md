@@ -154,4 +154,4 @@ Completed:
 - Exposes `prediction_confidence` and `active_algorithm` diagnostic aliases.
 - Adds focused pytest regression coverage for spread confidence, robust ensemble behavior, and calibration blocking.
 
-Status: Implemented locally. Pending live Home Assistant validation and push.
+Status: Pushed and deployed. Pending longer field validation and HA UI confirmation of the new comparison-sensor surface.

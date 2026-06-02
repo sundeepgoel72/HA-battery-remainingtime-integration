@@ -19,7 +19,7 @@
   - calibration-anchor blocking on low trust / fallback evidence
 - Remaining risk: the exact rogue source model still needs live field confirmation.
 
-- Issue #18 required per-algorithm observability. Comparison sensors and per-update debug logging are now implemented locally, but still need live Home Assistant verification after sync.
+- Issue #18 required per-algorithm observability. Comparison sensors and per-update debug logging are implemented, pushed, and deployed into the local HA instance. Remaining work is longer field verification and UI review of the new entity surface.
 
 ## Algorithms
 

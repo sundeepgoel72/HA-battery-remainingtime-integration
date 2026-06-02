@@ -34,7 +34,7 @@ The integration code, diagnostics, tests, and release automation remain in good 
 - `ruff check` passes
 - `python -m compileall` passes
 - live Home Assistant restart smoke test passed on the previous beta baseline
-- current stabilization pass still needs a fresh HA smoke test after sync
+- current stabilization pass has been synced into Home Assistant and passed an initial restart smoke test
 - runtime setup/reload/unload/removal behavior covered in tests
 
 ## Runtime Validation Status
@@ -53,7 +53,7 @@ Highlights from the previously validated beta baseline:
 
 ## Remaining Beta Artifacts
 
-- live validation of the Issue #17 stabilization fix in Home Assistant
+- longer live validation of the Issue #17 stabilization fix in Home Assistant
 - UI screenshots listed in [docs/SCREENSHOTS.md](./docs/SCREENSHOTS.md)
 - live recorder-database benchmarking follow-up beyond the synthetic baseline in [docs/RECORDER_BENCHMARKING.md](./docs/RECORDER_BENCHMARKING.md)
 
@@ -68,4 +68,4 @@ Main remaining risks are:
 
 ## Release Recommendation
 
-Keep `v0.1.0-beta.2` positioned as a field-validation beta. Do not advance the public beta claim until the ensemble-stability fix is synced into Home Assistant and validated against live telemetry.
+Keep `v0.1.0-beta.2` positioned as a field-validation beta. Do not advance the public beta claim until the ensemble-stability fix has longer live validation against real telemetry.

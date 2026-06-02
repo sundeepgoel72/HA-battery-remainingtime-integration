@@ -49,7 +49,8 @@ Validation performed:
 - `ruff check custom_components/battery_remaining_time tests`
 - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q`
 - Current result: `39 passed, 1 warning`
-- The new stabilization pass has not yet been smoke-tested in live Home Assistant in this handover snapshot.
+- Synced the stabilization pass into `/mnt/ssd/homeassistant/config/custom_components/battery_remaining_time`
+- Restarted Home Assistant and verified fresh post-restart Battery Remaining Time forecast updates with no integration traceback in checked logs
 
 Latest release baseline:
 
@@ -63,7 +64,8 @@ Current local stabilization snapshot:
 
 - Fixes Issue #17: ensemble collapse under rogue outputs
 - Implements Issue #18: per-algorithm observability sensors
-- Not yet committed in this snapshot
+- Commit: `22e122f Harden ensemble stability and observability`
+- Pushed to `origin/dev`
 
 ## Key Files
 
@@ -86,11 +88,10 @@ Current local stabilization snapshot:
 
 Release-surface follow-up:
 
-1. Sync the current stabilization pass into `/mnt/ssd/homeassistant/config/custom_components/battery_remaining_time`.
-2. Restart Home Assistant and verify live forecast updates, comparison sensors, spread/confidence telemetry, and calibration blocking behavior.
-3. Commit real frontend screenshots referenced in `docs/SCREENSHOTS.md`.
-4. Confirm HACS custom-repository install flow end to end in the live user HA frontend.
-5. Run the new GitHub validation workflows on GitHub after push and confirm green status.
+1. Verify the new comparison sensors and diagnostic aliases in the HA UI/entity registry.
+2. Commit real frontend screenshots referenced in `docs/SCREENSHOTS.md`.
+3. Confirm HACS custom-repository install flow end to end in the live user HA frontend.
+4. Run the new GitHub validation workflows on GitHub after push and confirm green status.
 
 Post-beta validation:
 
