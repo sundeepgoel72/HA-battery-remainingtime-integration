@@ -16,7 +16,7 @@
 - Capacity learning is implemented and needs longer field validation.
 - Charge efficiency learning is implemented and needs longer field validation.
 - Peukert exponent learning is implemented and needs real discharge-cycle validation.
-- Battery ageing estimation is partially implemented through health/cycle metrics, but profile optimization is still pending.
+- Battery ageing estimation and profile optimization are implemented, but still need longer field validation before beta claims should be treated as final.
 
 ## Performance
 

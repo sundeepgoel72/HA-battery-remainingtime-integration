@@ -183,10 +183,12 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             temperature,
             self._last_soc,
         )
+        configured_capacity_ah = float(data[CONF_BATTERY_CAPACITY_AH])
+        optimized_profile = self.stats_store.optimized_profile(configured_capacity_ah)
 
         inputs = BatteryInputs(
             algorithm=selected_algorithm,
-            capacity_ah=float(data[CONF_BATTERY_CAPACITY_AH]),
+            capacity_ah=float(optimized_profile["effective_capacity_ah"]),
             nominal_voltage=float(data[CONF_NOMINAL_VOLTAGE]),
             depletion_voltage=float(data[CONF_DEPLETION_VOLTAGE]) if data.get(CONF_DEPLETION_VOLTAGE) not in (None, "") else None,
             voltage=voltage,
@@ -196,6 +198,7 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             temperature=temperature,
             history_window_minutes=history_window,
             peukert_exponent=self.stats_store.effective_peukert_exponent(),
+            charge_efficiency=float(optimized_profile["effective_charge_efficiency"]),
             previous_soc_percent=self._last_soc,
             history=history,
             model_accuracy=self.stats_store.stats.model_accuracy,
@@ -211,11 +214,12 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         result = self.model_predictions.get(selected_algorithm) or self.model_predictions[DEFAULT_ALGORITHM]
 
         _LOGGER.debug(
-            "Model comparison: spread=%s outputs=%s accuracy=%s weights=%s",
+            "Model comparison: spread=%s outputs=%s accuracy=%s weights=%s optimized_profile=%s",
             self.algorithm_spread,
             {algorithm: telemetry.get("soc_percent") for algorithm, telemetry in self.model_telemetry.items()},
             self.stats_store.stats.model_accuracy,
             self.ensemble_weights,
+            optimized_profile,
         )
 
         self.event_state = detect_event_state(inputs, result)

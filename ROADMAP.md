@@ -26,9 +26,9 @@
 
 ## Phase 4 - Battery Intelligence
 
-- Battery ageing estimation: in progress
+- Battery ageing estimation: complete
 - Health scoring: complete
-- Profile optimization: pending
+- Profile optimization: complete
 
 ## Phase 5 - Public Release
 

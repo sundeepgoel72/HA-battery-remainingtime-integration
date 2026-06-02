@@ -24,6 +24,7 @@ MAX_PEUCKERT_OBSERVATIONS = 100
 DEFAULT_PEUCKERT_EXPONENT = 1.20
 MIN_PEUCKERT_EXPONENT = 1.00
 MAX_PEUCKERT_EXPONENT = 1.60
+DEFAULT_CHARGE_EFFICIENCY = 0.85
 
 
 @dataclass(slots=True)
@@ -115,11 +116,54 @@ class BatteryStatsStore:
         """Persist current stats."""
         await self._store.async_save(self.stats.as_dict())
 
+    def effective_capacity_ah(self, configured_capacity_ah: float) -> float:
+        """Return optimized capacity only when learning confidence is trusted."""
+        learned_capacity = self.stats.learned_capacity_ah
+        if self.stats.capacity_confidence == "low" or learned_capacity is None:
+            return configured_capacity_ah
+        return round(_clamp(learned_capacity, configured_capacity_ah * 0.35, configured_capacity_ah * 1.20), 2)
+
+    def effective_charge_efficiency(self, configured_efficiency: float = DEFAULT_CHARGE_EFFICIENCY) -> float:
+        """Return optimized charge efficiency only when learning confidence is trusted."""
+        learned_efficiency = self.stats.learned_charge_efficiency
+        if self.stats.charge_efficiency_confidence == "low" or learned_efficiency is None:
+            return configured_efficiency
+        return round(_clamp(learned_efficiency, 0.50, 1.05), 3)
+
     def effective_peukert_exponent(self, configured_exponent: float = DEFAULT_PEUCKERT_EXPONENT) -> float:
         """Return learned Peukert exponent only when enough observations exist."""
         if self.stats.peukert_confidence == "low" or self.stats.learned_peukert_exponent is None:
             return configured_exponent
         return _clamp(self.stats.learned_peukert_exponent, MIN_PEUCKERT_EXPONENT, MAX_PEUCKERT_EXPONENT)
+
+    def optimized_profile(self, configured_capacity_ah: float) -> dict[str, Any]:
+        """Return profile optimization details for diagnostics and logging."""
+        effective_capacity = self.effective_capacity_ah(configured_capacity_ah)
+        effective_efficiency = self.effective_charge_efficiency()
+        configured_capacity = max(configured_capacity_ah, 0.1)
+        retention = self.stats.capacity_retention_percent
+        if retention is None and self.stats.learned_capacity_ah is not None:
+            retention = round((self.stats.learned_capacity_ah / configured_capacity) * 100.0, 1)
+
+        ageing_rate = None
+        if retention is not None and self.stats.estimated_cycle_equivalents > 0:
+            ageing_rate = round(
+                max(0.0, (100.0 - retention)) / max(self.stats.estimated_cycle_equivalents, 0.1) * 100.0,
+                3,
+            )
+
+        return {
+            "profile_optimization_active": (
+                effective_capacity != round(configured_capacity_ah, 2)
+                or effective_efficiency != round(DEFAULT_CHARGE_EFFICIENCY, 3)
+            ),
+            "effective_capacity_ah": effective_capacity,
+            "effective_charge_efficiency": effective_efficiency,
+            "capacity_source": "learned" if effective_capacity != round(configured_capacity_ah, 2) else "configured",
+            "charge_efficiency_source": "learned" if effective_efficiency != round(DEFAULT_CHARGE_EFFICIENCY, 3) else "configured",
+            "capacity_retention_percent": retention,
+            "battery_ageing_rate_percent_per_100_cycles": ageing_rate,
+        }
 
     async def async_record_update(
         self,

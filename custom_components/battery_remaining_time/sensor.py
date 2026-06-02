@@ -374,6 +374,7 @@ def _confidence_score(coordinator: BatteryRemainingTimeCoordinator) -> int | Non
 def _health_attrs(coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry) -> dict[str, Any]:
     """Return learned battery health attributes."""
     stats = coordinator.stats_store.stats
+    profile = coordinator.stats_store.optimized_profile(stats.configured_capacity_ah or 0.0)
     return {
         "battery_health_percent": stats.battery_health_percent,
         "useful_life_percent": stats.useful_life_percent,
@@ -398,6 +399,12 @@ def _health_attrs(coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEnt
         "expected_cycle_life": _expected_cycle_life(entry),
         "remaining_cycles": _remaining_cycles(coordinator, entry),
         "remaining_life_percent": _remaining_life_percent(coordinator, entry),
+        "profile_optimization_active": profile["profile_optimization_active"],
+        "effective_capacity_ah": profile["effective_capacity_ah"],
+        "capacity_source": profile["capacity_source"],
+        "effective_charge_efficiency": profile["effective_charge_efficiency"],
+        "charge_efficiency_source": profile["charge_efficiency_source"],
+        "battery_ageing_rate_percent_per_100_cycles": profile["battery_ageing_rate_percent_per_100_cycles"],
         "cumulative_discharge_ah": round(stats.cumulative_discharge_ah, 3),
         "cumulative_charge_ah": round(stats.cumulative_charge_ah, 3),
         "last_capacity_anchor": stats.last_capacity_anchor,
@@ -476,6 +483,9 @@ class BatteryStatsSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], Sen
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        profile = self.coordinator.stats_store.optimized_profile(
+            self.coordinator.stats_store.stats.configured_capacity_ah or 0.0
+        )
         return {
             **_battery_profile_attrs(self._entry),
             "health_confidence": self.coordinator.stats_store.stats.health_confidence,
@@ -484,6 +494,9 @@ class BatteryStatsSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], Sen
             "health_observation_count": self.coordinator.stats_store.stats.health_observation_count,
             "capacity_observation_count": self.coordinator.stats_store.stats.capacity_observation_count,
             "peukert_observation_count": self.coordinator.stats_store.stats.peukert_observation_count,
+            "profile_optimization_active": profile["profile_optimization_active"],
+            "effective_capacity_ah": profile["effective_capacity_ah"],
+            "effective_charge_efficiency": profile["effective_charge_efficiency"],
         }
 
 
@@ -563,6 +576,7 @@ class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordi
             return {}
         event_state = self.coordinator.event_state
         stats = self.coordinator.stats_store.stats
+        profile = self.coordinator.stats_store.optimized_profile(stats.configured_capacity_ah or 0.0)
         return {
             "algorithm": data.algorithm,
             "confidence": data.confidence,
@@ -582,6 +596,10 @@ class BatteryPredictionHealthSensor(CoordinatorEntity[BatteryRemainingTimeCoordi
             "peukert_confidence": stats.peukert_confidence,
             "learned_peukert_exponent": stats.learned_peukert_exponent,
             "peukert_observation_count": stats.peukert_observation_count,
+            "profile_optimization_active": profile["profile_optimization_active"],
+            "effective_capacity_ah": profile["effective_capacity_ah"],
+            "effective_charge_efficiency": profile["effective_charge_efficiency"],
+            "battery_ageing_rate_percent_per_100_cycles": profile["battery_ageing_rate_percent_per_100_cycles"],
             "event_state": event_state.state if event_state else None,
             "event_evidence": event_state.evidence if event_state else [],
             "calibration_anchor": event_state.calibration_anchor if event_state else False,
@@ -622,6 +640,7 @@ class BatteryCalibrationStatusSensor(CoordinatorEntity[BatteryRemainingTimeCoord
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         stats = self.coordinator.stats_store.stats
+        profile = self.coordinator.stats_store.optimized_profile(stats.configured_capacity_ah or 0.0)
         return {
             "readiness_percent": self.native_value,
             "confidence_score": _confidence_score(self.coordinator),
@@ -637,6 +656,10 @@ class BatteryCalibrationStatusSensor(CoordinatorEntity[BatteryRemainingTimeCoord
             "capacity_confidence": stats.capacity_confidence,
             "peukert_confidence": stats.peukert_confidence,
             "learned_peukert_exponent": stats.learned_peukert_exponent,
+            "profile_optimization_active": profile["profile_optimization_active"],
+            "effective_capacity_ah": profile["effective_capacity_ah"],
+            "effective_charge_efficiency": profile["effective_charge_efficiency"],
+            "battery_ageing_rate_percent_per_100_cycles": profile["battery_ageing_rate_percent_per_100_cycles"],
             "health_observation_count": stats.health_observation_count,
             "capacity_observation_count": stats.capacity_observation_count,
             "peukert_observation_count": stats.peukert_observation_count,

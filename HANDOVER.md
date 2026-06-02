@@ -25,6 +25,7 @@ Recent work completed:
 - Completed Phase 3 adaptive learning by adding bounded adaptive ensemble weighting from learned model accuracy.
 - Exposed `model_weighting`, `ensemble_weights`, and per-model `ensemble_weight` diagnostics.
 - Reduced the Home Assistant entity surface so only the selected algorithm result is exposed as entities; alternate model outputs now live in diagnostics and coordinator logs.
+- Completed the Phase 4 baseline by applying trusted learned capacity and charge efficiency to runtime predictions and exposing profile optimization / ageing diagnostics.
 - Updated roadmap and known issues to reflect implemented capacity, charge-efficiency, Peukert, model-accuracy, and adaptive ensemble learning.
 
 Validation performed:
@@ -71,7 +72,7 @@ Quality and architecture:
 4. Measure recorder query cost with long history windows and short update intervals.
 5. Validate adaptive Peukert learning against real discharge cycles in Home Assistant before treating learned exponent confidence as beta-ready.
 6. Validate adaptive ensemble weights against field data before treating weighting confidence as final.
-7. Start Phase 4 work on battery ageing estimation and profile optimization after the current entity-surface simplification settles in HA.
+7. Validate Phase 4 ageing and profile optimization against longer field data before treating optimized capacity/efficiency as final.
 
 Release checklist:
 
@@ -85,4 +86,4 @@ Release checklist:
 
 ## Notes
 
-The integration now compiles, passes `ruff`, and has a focused unit test suite. Phase 3 adaptive learning is implemented. The most important remaining risk before beta is real Home Assistant runtime behavior, especially config-entry reloads, recorder query cost, Repairs issue display, adaptive-learning field calibration, and entity registry stability.
+The integration now compiles, passes `ruff`, and has a focused unit test suite. Phase 3 adaptive learning and the Phase 4 baseline are implemented. The most important remaining risk before beta is real Home Assistant runtime behavior, especially config-entry reloads, recorder query cost, Repairs issue display, field calibration of learned profile values, and entity registry stability.

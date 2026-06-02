@@ -61,6 +61,7 @@ Current event states:
 - Calibration evidence collection
 - Persistent statistics
 - Adaptive Peukert exponent learning
+- Runtime profile optimization from learned capacity and charge efficiency
 - Prediction diagnostics
 - Local-only operation
 - HACS compatible
@@ -105,6 +106,7 @@ Diagnostic entities include:
 - peukert_observation_count
 
 Diagnostics expose confidence, algorithm selection, event state, calibration readiness, history window and calibration evidence.
+They also expose profile-optimization and ageing details such as effective capacity, effective charge efficiency, and estimated ageing rate.
 
 The integration does not expose per-model SOC entities by default. Non-selected model outputs, spread, and ensemble weighting remain available through diagnostic attributes and coordinator logs.
 

@@ -112,6 +112,47 @@ def test_peukert_learning_uses_learned_exponent_after_medium_confidence() -> Non
     assert store.effective_peukert_exponent() == store.stats.learned_peukert_exponent
 
 
+def test_profile_optimization_uses_trusted_learned_capacity_and_efficiency() -> None:
+    """Phase 4 optimization should only apply learned values once confidence is trusted."""
+    store = object.__new__(BatteryStatsStore)
+    store.stats = BatteryStats(
+        learned_capacity_ah=82.0,
+        capacity_confidence="medium",
+        learned_charge_efficiency=0.91,
+        charge_efficiency_confidence="high",
+        capacity_retention_percent=82.0,
+        estimated_cycle_equivalents=120.0,
+    )
+
+    profile = store.optimized_profile(100.0)
+
+    assert store.effective_capacity_ah(100.0) == 82.0
+    assert store.effective_charge_efficiency() == 0.91
+    assert profile["profile_optimization_active"] is True
+    assert profile["capacity_source"] == "learned"
+    assert profile["charge_efficiency_source"] == "learned"
+    assert profile["battery_ageing_rate_percent_per_100_cycles"] == 15.0
+
+
+def test_profile_optimization_falls_back_when_learning_confidence_is_low() -> None:
+    """Low-confidence learners should not alter the runtime battery profile."""
+    store = object.__new__(BatteryStatsStore)
+    store.stats = BatteryStats(
+        learned_capacity_ah=75.0,
+        capacity_confidence="low",
+        learned_charge_efficiency=0.95,
+        charge_efficiency_confidence="low",
+    )
+
+    profile = store.optimized_profile(100.0)
+
+    assert store.effective_capacity_ah(100.0) == 100.0
+    assert store.effective_charge_efficiency() == 0.85
+    assert profile["profile_optimization_active"] is False
+    assert profile["capacity_source"] == "configured"
+    assert profile["charge_efficiency_source"] == "configured"
+
+
 def _peukert_history() -> list[HistoryPoint]:
     """Return a sustained recorder discharge window ending at low battery."""
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
