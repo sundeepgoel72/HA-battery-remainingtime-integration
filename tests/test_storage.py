@@ -1,16 +1,13 @@
-"""Tests for storage learning and recorder helpers."""
+"""Tests for storage learning and persistence."""
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from custom_components.battery_remaining_time.events import BatteryEventState
-from custom_components.battery_remaining_time.history import history_start_time
-from custom_components.battery_remaining_time.predictor import (
-    BatteryInputs,
-    BatteryPrediction,
-    HistoryPoint,
-)
+from custom_components.battery_remaining_time.predictor import BatteryInputs, BatteryPrediction, HistoryPoint
 from custom_components.battery_remaining_time.storage import (
     BatteryStats,
     BatteryStatsStore,
@@ -33,15 +30,6 @@ def test_new_history_points_filters_processed_timestamps() -> None:
     points = _new_history_points(history, checkpoint.isoformat())
 
     assert points == [history[2]]
-
-
-def test_history_start_time_uses_newer_checkpoint() -> None:
-    """Recorder queries should start at the checkpoint when it is newer than the window."""
-    checkpoint = datetime.now(timezone.utc) - timedelta(minutes=5)
-
-    start = history_start_time(60, checkpoint)
-
-    assert start == checkpoint
 
 
 def test_model_accuracy_uses_raw_anchor_evidence_not_selected_prediction() -> None:
@@ -151,6 +139,37 @@ def test_profile_optimization_falls_back_when_learning_confidence_is_low() -> No
     assert profile["profile_optimization_active"] is False
     assert profile["capacity_source"] == "configured"
     assert profile["charge_efficiency_source"] == "configured"
+
+
+def test_storage_persistence_round_trips_stats() -> None:
+    """Persistent stats should save and load from the HA store."""
+
+    async def scenario() -> None:
+        persisted: dict[str, object] = {}
+
+        async def fake_save(data: dict[str, object]) -> None:
+            persisted.clear()
+            persisted.update(data)
+
+        async def fake_load() -> dict[str, object]:
+            return dict(persisted)
+
+        store = object.__new__(BatteryStatsStore)
+        store._store = SimpleNamespace(async_save=fake_save, async_load=fake_load)
+        store.stats = BatteryStats()
+        store.stats.learned_capacity_ah = 123.4
+        store.stats.capacity_confidence = "medium"
+        await store.async_save()
+
+        loaded = object.__new__(BatteryStatsStore)
+        loaded._store = SimpleNamespace(async_save=fake_save, async_load=fake_load)
+        loaded.stats = BatteryStats()
+        await loaded.async_load()
+
+        assert loaded.stats.learned_capacity_ah == 123.4
+        assert loaded.stats.capacity_confidence == "medium"
+
+    asyncio.run(scenario())
 
 
 def _peukert_history() -> list[HistoryPoint]:

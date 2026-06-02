@@ -6,12 +6,17 @@ from types import SimpleNamespace
 
 from homeassistant.const import CONF_NAME
 
-from custom_components.battery_remaining_time.config_flow import _maybe_update_entry_title, _stable_unique_id
+from custom_components.battery_remaining_time.config_flow import (
+    _default_depletion_voltage,
+    _maybe_update_entry_title,
+    _stable_unique_id,
+)
 from custom_components.battery_remaining_time.const import (
     CONF_ALGORITHM,
     CONF_BATTERY_CAPACITY_AH,
     CONF_BATTERY_TYPE,
     CONF_CURRENT_SENSOR,
+    CONF_DEPLETION_VOLTAGE,
     CONF_HISTORY_WINDOW_MINUTES,
     CONF_NOMINAL_VOLTAGE,
     CONF_UPDATE_INTERVAL,
@@ -53,6 +58,16 @@ def test_runtime_config_options_override_data() -> None:
 
     assert data[CONF_UPDATE_INTERVAL] == 30
     assert data[CONF_HISTORY_WINDOW_MINUTES] == 120
+
+
+def test_default_depletion_voltage_prefers_configured_value() -> None:
+    """Configured depletion voltage should override nominal-derived defaults."""
+    defaults = {
+        CONF_DEPLETION_VOLTAGE: 11.8,
+        CONF_NOMINAL_VOLTAGE: 12.0,
+    }
+
+    assert _default_depletion_voltage(defaults) == 11.8
 
 
 def test_options_title_sync_updates_config_entry_title() -> None:
