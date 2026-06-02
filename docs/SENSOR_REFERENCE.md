@@ -20,7 +20,7 @@ These are the primary sensors created for every battery instance.
 - `algorithm` - The algorithm used for this estimate
 - `soc_percent` - Numeric SOC value
 - `mode` - Operating mode (charging/discharging/idle)
-- `confidence` - Prediction confidence (low/medium/high)
+- `confidence` - Prediction confidence (`very_low`/`low`/`medium`/`high`)
 - `event_state` - Battery operating state (resting/charging/discharging/float/etc)
 - `battery_type` - Configured battery chemistry
 - `battery_brand_model` - Optional brand/model identifier
@@ -78,7 +78,7 @@ These are the primary sensors created for every battery instance.
 ### 6. Confidence
 **Entity ID:** `sensor.{battery_name}_confidence`  
 **Type:** String  
-**Values:** `low`, `medium`, `high`
+**Values:** `very_low`, `low`, `medium`, `high`
 
 **Description:** Confidence level in the current prediction.
 
@@ -88,6 +88,51 @@ These are the primary sensors created for every battery instance.
 - Algorithm agreement (spread)
 - Sensor availability
 - System uptime
+
+**Spread thresholds:**
+- `high` when spread is `<= 5%`
+- `medium` when spread is `<= 15%`
+- `low` when spread is `<= 30%`
+- `very_low` when spread is `> 30%`
+
+---
+
+## Comparison Sensors
+
+These sensors are exposed for field debugging and model observability during the current beta cycle.
+
+### SOC Comparison Sensors
+
+- `sensor.{battery_name}_soc_ocv`
+- `sensor.{battery_name}_soc_coulomb`
+- `sensor.{battery_name}_soc_peukert`
+- `sensor.{battery_name}_soc_hybrid`
+- `sensor.{battery_name}_soc_ensemble`
+
+### TTE Comparison Sensors
+
+- `sensor.{battery_name}_tte_ocv`
+- `sensor.{battery_name}_tte_coulomb`
+- `sensor.{battery_name}_tte_peukert`
+- `sensor.{battery_name}_tte_hybrid`
+- `sensor.{battery_name}_tte_ensemble`
+
+### TTF Comparison Sensors
+
+- `sensor.{battery_name}_ttf_ocv`
+- `sensor.{battery_name}_ttf_coulomb`
+- `sensor.{battery_name}_ttf_peukert`
+- `sensor.{battery_name}_ttf_hybrid`
+- `sensor.{battery_name}_ttf_ensemble`
+
+**Attributes exposed on comparison sensors:**
+- `algorithm`
+- `confidence`
+- `reason`
+- `mode`
+- `algorithm_spread`
+- `active_algorithm`
+- `source_evidence_status`
 
 ### 7. Algorithm
 **Entity ID:** `sensor.{battery_name}_algorithm`  

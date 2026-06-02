@@ -34,14 +34,22 @@ Recent work completed:
 - Added `docs/SCREENSHOTS.md` to track required HACS/public-beta UI captures.
 - Rewrote the HACS beta summary/checklist docs so they match the actual codebase and validation evidence.
 - Updated roadmap and known issues to reflect implemented capacity, charge-efficiency, Peukert, model-accuracy, and adaptive ensemble learning.
+- Hardened the ensemble path after a field defect where SOC collapsed to `0%` during idle conditions while confidence remained high.
+- Replaced fragile ensemble mean behavior with robust median aggregation across valid model outputs.
+- Switched confidence grading to spread-based thresholds with `very_low` support.
+- Added SOC rate limiting and last-valid-SOC preservation so missing/untrusted source updates do not emit synthetic `0%`.
+- Blocked calibration anchors when confidence is low, spread is high, or source evidence is recorder fallback / insufficient.
+- Reintroduced per-algorithm comparison sensors for SOC, TTE, and TTF, and added `prediction_confidence` plus `active_algorithm` diagnostic aliases.
+- Added per-update debug logging of per-algorithm SOC/TTE/TTF outputs plus spread/confidence.
+- Added focused regression tests for spread-based confidence, robust ensemble behavior, comparison-sensor exposure, and calibration blocking under rogue-output conditions.
 
 Validation performed:
 
 - `python -m compileall custom_components/battery_remaining_time tests`
 - `ruff check custom_components/battery_remaining_time tests`
 - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q`
-- Home Assistant restart smoke test after syncing the release build into `/mnt/ssd/homeassistant/config/custom_components/battery_remaining_time`
-- Live Home Assistant log verification for Battery Remaining Time forecast updates and recorder fallback behavior
+- Current result: `39 passed, 1 warning`
+- The new stabilization pass has not yet been smoke-tested in live Home Assistant in this handover snapshot.
 
 Latest release baseline:
 
@@ -50,6 +58,12 @@ Latest release baseline:
 - `b1ed24b Expand Phase 0 validation suite`
 - `ed9e8ad Prepare Phase 0 beta release artifacts`
 - Release tag to use: `v0.1.0-beta.2`
+
+Current local stabilization snapshot:
+
+- Fixes Issue #17: ensemble collapse under rogue outputs
+- Implements Issue #18: per-algorithm observability sensors
+- Not yet committed in this snapshot
 
 ## Key Files
 
@@ -72,18 +86,21 @@ Latest release baseline:
 
 Release-surface follow-up:
 
-1. Commit real frontend screenshots referenced in `docs/SCREENSHOTS.md`.
-2. Confirm HACS custom-repository install flow end to end in the live user HA frontend.
-3. Run the new GitHub validation workflows on GitHub after push and confirm green status.
+1. Sync the current stabilization pass into `/mnt/ssd/homeassistant/config/custom_components/battery_remaining_time`.
+2. Restart Home Assistant and verify live forecast updates, comparison sensors, spread/confidence telemetry, and calibration blocking behavior.
+3. Commit real frontend screenshots referenced in `docs/SCREENSHOTS.md`.
+4. Confirm HACS custom-repository install flow end to end in the live user HA frontend.
+5. Run the new GitHub validation workflows on GitHub after push and confirm green status.
 
 Post-beta validation:
 
-1. Validate adaptive Peukert learning against real discharge cycles before treating learned exponent confidence as field-trusted.
-2. Validate adaptive ensemble weights against field data before treating weighting confidence as final.
-3. Validate Phase 4 ageing/profile optimization against longer field data before treating optimized capacity/efficiency as final.
-4. Benchmark recorder cost against a real large recorder database, not only the current synthetic benchmark.
-5. Confirm entity registry stability after real option edits and long-lived upgrades.
+1. Identify which raw model path is producing the rogue idle SOC output in the field case.
+2. Validate adaptive Peukert learning against real discharge cycles before treating learned exponent confidence as field-trusted.
+3. Validate adaptive ensemble weights against field data before treating weighting confidence as final.
+4. Validate Phase 4 ageing/profile optimization against longer field data before treating optimized capacity/efficiency as final.
+5. Benchmark recorder cost against a real large recorder database, not only the current synthetic benchmark.
+6. Confirm entity registry stability after real option edits and long-lived upgrades.
 
 ## Notes
 
-The integration now compiles, passes `ruff`, and has a broader Phase 0 validation suite (`31 passed, 1 warning`). Phase 3 adaptive learning and the Phase 4 baseline are implemented, and the Phase 0 beta hardening pass is effectively complete apart from frontend screenshot capture and live HACS-install confirmation. The main remaining risks have shifted from structural correctness to field validation quality, recorder scaling on real databases, and long-lived runtime behavior in user deployments.
+The integration now compiles, passes `ruff`, and the local suite is at `39 passed, 1 warning`. The current priority is no longer feature expansion; it is proving that the new ensemble hardening actually prevents idle-SOC collapse in live Home Assistant telemetry. Public-beta readiness should be treated as temporarily reduced until that field validation is complete.

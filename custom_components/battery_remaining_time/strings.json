@@ -57,6 +57,8 @@
       "algorithm": {"name": "Algorithm"},
       "prediction_health": {"name": "Prediction health"},
       "calibration_status": {"name": "Calibration status"},
+      "prediction_confidence": {"name": "Prediction confidence"},
+      "active_algorithm": {"name": "Active algorithm"},
       "battery_health": {"name": "Battery health"},
       "battery_useful_life": {"name": "Battery useful life"},
       "equivalent_cycles": {"name": "Equivalent cycles"},
@@ -72,7 +74,22 @@
       "peukert_observation_count": {"name": "Peukert observation count"},
       "remaining_cycles": {"name": "Remaining cycles"},
       "remaining_life": {"name": "Remaining life"},
-      "algorithm_spread": {"name": "Algorithm spread"}
+      "algorithm_spread": {"name": "Algorithm spread"},
+      "soc_ocv": {"name": "SOC OCV"},
+      "soc_coulomb": {"name": "SOC Coulomb"},
+      "soc_peukert": {"name": "SOC Peukert"},
+      "soc_hybrid": {"name": "SOC Hybrid"},
+      "soc_ensemble": {"name": "SOC Ensemble"},
+      "tte_ocv": {"name": "TTE OCV"},
+      "tte_coulomb": {"name": "TTE Coulomb"},
+      "tte_peukert": {"name": "TTE Peukert"},
+      "tte_hybrid": {"name": "TTE Hybrid"},
+      "tte_ensemble": {"name": "TTE Ensemble"},
+      "ttf_ocv": {"name": "TTF OCV"},
+      "ttf_coulomb": {"name": "TTF Coulomb"},
+      "ttf_peukert": {"name": "TTF Peukert"},
+      "ttf_hybrid": {"name": "TTF Hybrid"},
+      "ttf_ensemble": {"name": "TTF Ensemble"}
     }
   },
   "issues": {

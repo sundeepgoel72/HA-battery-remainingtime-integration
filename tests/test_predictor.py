@@ -10,12 +10,16 @@ from custom_components.battery_remaining_time.const import CONF_BATTERY_TYPE
 from custom_components.battery_remaining_time.predictor import (
     BatteryInputs,
     BatteryPrediction,
+    confidence_from_spread,
+    ensemble_from_predictions,
     ensemble_model_weighting_strategy,
     ensemble_model_weights,
     practical_usable_soc,
     time_to_depletion,
 )
 from custom_components.battery_remaining_time.sensor import (
+    COMPARISON_SENSORS,
+    DIAGNOSTIC_ALIAS_SENSORS,
     DEFAULT_EXPECTED_CYCLE_LIFE,
     EXPECTED_CYCLE_LIFE_BY_TYPE,
     HEALTH_SENSORS,
@@ -112,3 +116,52 @@ def test_adaptive_ensemble_weighting_strategy_reports_diagnostics() -> None:
     assert strategy["active_model_count"] == 2
     assert strategy["accuracy_model_count"] == 1
     assert strategy["resting_context"] is True
+
+
+@pytest.mark.parametrize(
+    ("spread", "count", "expected"),
+    [
+        (4.9, 5, "high"),
+        (10.0, 5, "medium"),
+        (20.0, 5, "low"),
+        (35.0, 5, "very_low"),
+        (None, 1, "low"),
+    ],
+)
+def test_spread_based_confidence_thresholds(spread: float | None, count: int, expected: str) -> None:
+    """Ensemble confidence should be driven by model agreement."""
+    assert confidence_from_spread(spread, count) == expected
+
+
+def test_robust_ensemble_uses_resting_anchor_to_reject_rogue_outputs() -> None:
+    """A couple of rogue low-output models should not collapse a resting full battery."""
+    inputs = BatteryInputs(
+        algorithm="ensemble",
+        capacity_ah=150.0,
+        nominal_voltage=24.0,
+        voltage=25.6,
+        current=0.0,
+    )
+    predictions = {
+        "voltage_only": BatteryPrediction("voltage_only", 100.0, "idle", 0.0, None, None, "high", "ocv"),
+        "shepherd": BatteryPrediction("shepherd", 98.0, "idle", 0.0, None, None, "medium", "shepherd"),
+        "hybrid_lead_acid": BatteryPrediction("hybrid_lead_acid", 97.0, "idle", 0.0, None, None, "high", "hybrid"),
+        "current_flow": BatteryPrediction("current_flow", 0.0, "idle", 0.0, None, None, "low", "rogue"),
+        "peukert": BatteryPrediction("peukert", 0.0, "idle", 0.0, None, None, "medium", "rogue"),
+    }
+
+    result = ensemble_from_predictions(inputs, predictions)
+
+    assert result.soc_percent == 98.0
+    assert result.confidence == "very_low"
+
+
+def test_comparison_and_alias_sensor_keys_are_exposed() -> None:
+    """Issue #18 observability keys should be present on the sensor surface."""
+    comparison_keys = {description.key for description in COMPARISON_SENSORS}
+    alias_keys = {description.key for description in DIAGNOSTIC_ALIAS_SENSORS}
+
+    assert {"soc_ocv", "soc_coulomb", "soc_peukert", "soc_hybrid", "soc_ensemble"} <= comparison_keys
+    assert {"tte_ocv", "tte_coulomb", "tte_peukert", "tte_hybrid", "tte_ensemble"} <= comparison_keys
+    assert {"ttf_ocv", "ttf_coulomb", "ttf_peukert", "ttf_hybrid", "ttf_ensemble"} <= comparison_keys
+    assert {"prediction_confidence", "active_algorithm"} <= alias_keys

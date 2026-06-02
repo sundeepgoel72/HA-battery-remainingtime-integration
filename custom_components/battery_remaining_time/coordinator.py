@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any
 import logging
@@ -36,6 +37,9 @@ from .predictor import (
     HistoryPoint,
     algorithm_spread,
     all_model_predictions,
+    lower_confidence,
+    rebuild_prediction_with_soc,
+    confidence_from_spread,
     ensemble_model_weighting_strategy,
     ensemble_model_weights,
     prediction_to_telemetry,
@@ -80,6 +84,8 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
     algorithm_spread: float | None
     ensemble_weights: dict[str, float]
     model_weighting: dict[str, float | int | str | bool]
+    source_evidence_status: str
+    calibration_allowed: bool
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize coordinator."""
@@ -92,6 +98,8 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         self.algorithm_spread = None
         self.ensemble_weights = {}
         self.model_weighting = {}
+        self.source_evidence_status = "unknown"
+        self.calibration_allowed = False
         self.stats_store = BatteryStatsStore(hass, entry.entry_id)
         data = runtime_config(entry)
         self._last_history_fetch_timestamp: datetime | None = None
@@ -135,11 +143,16 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         else:
             _LOGGER.debug("Recorder history points available: %s", len(history))
 
-        voltage = _state_float(self.hass, data.get(CONF_VOLTAGE_SENSOR))
-        current = _state_float(self.hass, data.get(CONF_CURRENT_SENSOR))
-        charge_power = _state_float(self.hass, data.get(CONF_CHARGE_POWER_SENSOR))
-        discharge_power = _state_float(self.hass, data.get(CONF_DISCHARGE_POWER_SENSOR))
-        temperature = _state_float(self.hass, data.get(CONF_TEMPERATURE_SENSOR))
+        live_voltage = _state_float(self.hass, data.get(CONF_VOLTAGE_SENSOR))
+        live_current = _state_float(self.hass, data.get(CONF_CURRENT_SENSOR))
+        live_charge_power = _state_float(self.hass, data.get(CONF_CHARGE_POWER_SENSOR))
+        live_discharge_power = _state_float(self.hass, data.get(CONF_DISCHARGE_POWER_SENSOR))
+        live_temperature = _state_float(self.hass, data.get(CONF_TEMPERATURE_SENSOR))
+        voltage = live_voltage
+        current = live_current
+        charge_power = live_charge_power
+        discharge_power = live_discharge_power
+        temperature = live_temperature
 
         # HA can call custom coordinators during startup before ESPHome/MQTT
         # source entities have restored their current states. Do not allow that
@@ -158,6 +171,23 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             discharge_power = _latest_history_value(history, "discharge_power")
         if temperature is None:
             temperature = _latest_history_value(history, "temperature")
+
+        used_recorder_fallback = any(
+            (
+                live_voltage is None and voltage is not None,
+                live_current is None and current is not None,
+                live_charge_power is None and charge_power is not None,
+                live_discharge_power is None and discharge_power is not None,
+                live_temperature is None and temperature is not None,
+            )
+        )
+        self.source_evidence_status = (
+            "live"
+            if live_voltage is not None and (live_current is not None or live_charge_power is not None or live_discharge_power is not None)
+            else "recorder_fallback"
+            if used_recorder_fallback
+            else "insufficient"
+        )
 
         no_live_or_history_voltage = voltage is None
         no_power_evidence = current is None and charge_power is None and discharge_power is None
@@ -212,6 +242,18 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
         }
         self.algorithm_spread = algorithm_spread(self.model_predictions)
         result = self.model_predictions.get(selected_algorithm) or self.model_predictions[DEFAULT_ALGORITHM]
+        spread_confidence = confidence_from_spread(
+            self.algorithm_spread,
+            sum(1 for prediction in self.model_predictions.values() if prediction.soc_percent is not None),
+        )
+        result = replace(result, confidence=lower_confidence(result.confidence, spread_confidence))
+        result = _rate_limit_prediction(inputs, result, self._last_soc, self.algorithm_spread, self.source_evidence_status)
+        if result.soc_percent is None and self.data is not None and self.data.soc_percent is not None:
+            result = replace(
+                self.data,
+                confidence="very_low",
+                reason=f"preserved last valid SOC; {result.reason}",
+            )
 
         _LOGGER.debug(
             "Model comparison: spread=%s outputs=%s accuracy=%s weights=%s optimized_profile=%s",
@@ -221,13 +263,27 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             self.ensemble_weights,
             optimized_profile,
         )
+        _log_model_outputs(self.model_predictions, selected_algorithm, self.algorithm_spread, result.confidence)
 
         self.event_state = detect_event_state(inputs, result)
+        self.calibration_allowed = _calibration_allowed(
+            confidence=result.confidence,
+            spread=self.algorithm_spread,
+            source_evidence_status=self.source_evidence_status,
+        )
+        if self.event_state.calibration_anchor and not self.calibration_allowed:
+            self.event_state = BatteryEventState(
+                state=self.event_state.state,
+                evidence=[*self.event_state.evidence, "calibration_blocked_untrusted_prediction"],
+                calibration_anchor=False,
+            )
         _LOGGER.debug(
-            "Battery event state: state=%s evidence=%s anchor=%s",
+            "Battery event state: state=%s evidence=%s anchor=%s calibration_allowed=%s source_evidence=%s",
             self.event_state.state,
             self.event_state.evidence,
             self.event_state.calibration_anchor,
+            self.calibration_allowed,
+            self.source_evidence_status,
         )
         if self.event_state.calibration_anchor:
             _LOGGER.info("Calibration evidence detected: state=%s evidence=%s", self.event_state.state, self.event_state.evidence)
@@ -286,3 +342,73 @@ def _latest_history_timestamp(history: list[HistoryPoint]) -> datetime | None:
     if not timestamps:
         return None
     return max(timestamps)
+
+
+def _calibration_allowed(*, confidence: str, spread: float | None, source_evidence_status: str) -> bool:
+    """Return true when calibration anchors are safe to trust."""
+    if confidence in {"low", "very_low"}:
+        return False
+    if spread is not None and spread > 15.0:
+        return False
+    return source_evidence_status == "live"
+
+
+def _log_model_outputs(
+    predictions: dict[str, BatteryPrediction],
+    selected_algorithm: str,
+    spread: float | None,
+    confidence: str,
+) -> None:
+    """Log per-algorithm forecast outputs for field debugging."""
+    aliases = {
+        "voltage_only": "ocv",
+        "current_flow": "coulomb",
+        "peukert": "peukert",
+        "hybrid_lead_acid": "hybrid",
+        "ensemble": "ensemble",
+    }
+    payload: list[str] = []
+    for algorithm, alias in aliases.items():
+        prediction = predictions.get(algorithm)
+        if prediction is None:
+            continue
+        payload.append(
+            f"soc_{alias}={prediction.soc_percent} tte_{alias}={prediction.time_to_empty_h} ttf_{alias}={prediction.time_to_full_h}"
+        )
+    message = (
+        f"Per-algorithm forecast: {'; '.join(payload)}; "
+        f"active_algorithm={selected_algorithm} spread={spread} confidence={confidence}"
+    )
+    if spread is not None and spread > 30.0:
+        _LOGGER.warning(message)
+    else:
+        _LOGGER.debug(message)
+
+
+def _rate_limit_prediction(
+    inputs: BatteryInputs,
+    prediction: BatteryPrediction,
+    previous_soc: float | None,
+    spread: float | None,
+    source_evidence_status: str,
+) -> BatteryPrediction:
+    """Clamp impossible one-step SOC moves on the selected output."""
+    if previous_soc is None or prediction.soc_percent is None:
+        return prediction
+    max_step = 8.0 if prediction.mode in {"charging", "discharging"} else 2.0
+    if spread is not None and spread > 30.0:
+        max_step = min(max_step, 1.0)
+    elif spread is not None and spread > 15.0:
+        max_step = min(max_step, 2.0)
+    if source_evidence_status != "live":
+        max_step = min(max_step, 2.0)
+    delta = prediction.soc_percent - previous_soc
+    if abs(delta) <= max_step:
+        return prediction
+    limited_soc = round(previous_soc + (max_step if delta > 0 else -max_step), 1)
+    return rebuild_prediction_with_soc(
+        inputs,
+        replace(prediction, confidence=lower_confidence(prediction.confidence, "low")),
+        limited_soc,
+        "; SOC rate-limited",
+    )

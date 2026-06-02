@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from math import isfinite
+from statistics import median
 from typing import Callable
 
 from .const import (
@@ -24,6 +25,12 @@ ALGORITHM_PEUCKERT = "peukert"
 ALGORITHM_KIBAM = "kibam"
 ALGORITHM_SHEPHERD = "shepherd"
 ALGORITHM_ENSEMBLE = "ensemble"
+CONFIDENCE_ORDER = {
+    "high": 4,
+    "medium": 3,
+    "low": 2,
+    "very_low": 1,
+}
 
 
 @dataclass(slots=True)
@@ -104,9 +111,33 @@ def prediction_to_telemetry(prediction: BatteryPrediction) -> dict[str, float | 
     }
 
 
+def is_valid_soc(value: float | None) -> bool:
+    """Return true when a SOC value is finite and in-range."""
+    return value is not None and isfinite(value) and 0.0 <= value <= 100.0
+
+
+def confidence_from_spread(spread: float | None, valid_model_count: int) -> str:
+    """Return the confidence bucket implied by model agreement."""
+    if valid_model_count < 2 or spread is None:
+        return "low"
+    if spread <= 5.0:
+        return "high"
+    if spread <= 15.0:
+        return "medium"
+    if spread <= 30.0:
+        return "low"
+    return "very_low"
+
+
+def lower_confidence(*values: str) -> str:
+    """Return the most conservative confidence level."""
+    ranked = sorted((value for value in values if value), key=lambda value: CONFIDENCE_ORDER.get(value, 0))
+    return ranked[0] if ranked else "low"
+
+
 def algorithm_spread(predictions: dict[str, BatteryPrediction]) -> float | None:
     """Return max-min SOC spread across models."""
-    values = [p.soc_percent for p in predictions.values() if p.soc_percent is not None]
+    values = [p.soc_percent for p in predictions.values() if is_valid_soc(p.soc_percent)]
     if len(values) < 2:
         return None
     return safe_round(max(values) - min(values), 1)
@@ -419,6 +450,37 @@ def _weighted_average(terms: list[tuple[float, float]]) -> float | None:
     return sum(value * weight for value, weight in terms) / total_weight
 
 
+def rebuild_prediction_with_soc(inputs: BatteryInputs, prediction: BatteryPrediction, soc: float, reason_suffix: str = "") -> BatteryPrediction:
+    """Return one prediction rebuilt around a replacement SOC value."""
+    use_peukert = prediction.algorithm in {
+        ALGORITHM_PEUCKERT,
+        ALGORITHM_HYBRID_LEAD_ACID,
+        ALGORITHM_TEMPERATURE,
+        ALGORITHM_KIBAM,
+        ALGORITHM_SHEPHERD,
+        ALGORITHM_ADAPTIVE_HYBRID,
+        ALGORITHM_ENSEMBLE,
+    }
+    use_temp = prediction.algorithm in {
+        ALGORITHM_TEMPERATURE,
+        ALGORITHM_KIBAM,
+        ALGORITHM_SHEPHERD,
+        ALGORITHM_ADAPTIVE_HYBRID,
+        ALGORITHM_ENSEMBLE,
+    }
+    tte, ttf = runtime_from_soc(inputs, soc, prediction.net_power_w, peukert=use_peukert, temp=use_temp)
+    updated = _prediction(
+        prediction.algorithm,
+        soc,
+        prediction.net_power_w,
+        tte,
+        ttf,
+        prediction.confidence,
+        f"{prediction.reason}{reason_suffix}",
+    )
+    return _apply_depletion_metrics(inputs, updated)
+
+
 def _is_resting_like(inputs: BatteryInputs, net_power: float | None) -> bool:
     """Return true when live readings indicate idle/resting behaviour."""
     if net_power is not None and abs(net_power) <= 10.0:
@@ -449,6 +511,36 @@ def _resting_ocv_anchor_soc(predictions: dict[str, BatteryPrediction]) -> float 
         anchor = _weighted_average(anchor_terms)
 
     return anchor
+
+
+def _robust_soc_terms(inputs: BatteryInputs, predictions: dict[str, BatteryPrediction]) -> tuple[list[tuple[str, float]], float | None, bool]:
+    """Return valid SOC terms, optional resting anchor, and whether anchor filtering was applied."""
+    net, _ = resolve_net_power(inputs)
+    resting = _is_resting_like(inputs, net)
+    anchor_soc = _resting_ocv_anchor_soc(predictions) if resting else None
+    terms = [
+        (algorithm, float(prediction.soc_percent))
+        for algorithm, prediction in predictions.items()
+        if algorithm != ALGORITHM_ENSEMBLE and is_valid_soc(prediction.soc_percent)
+    ]
+    if anchor_soc is None:
+        return terms, None, False
+
+    anchor_algorithms = {
+        ALGORITHM_VOLTAGE_ONLY,
+        ALGORITHM_SHEPHERD,
+        ALGORITHM_HYBRID_LEAD_ACID,
+        ALGORITHM_TEMPERATURE,
+        ALGORITHM_ADAPTIVE_HYBRID,
+    }
+    anchored_terms = [
+        (algorithm, soc)
+        for algorithm, soc in terms
+        if algorithm in anchor_algorithms or abs(soc - anchor_soc) <= 20.0
+    ]
+    if len(anchored_terms) >= 2:
+        return anchored_terms, anchor_soc, True
+    return terms, anchor_soc, False
 
 
 def _resting_weight_multiplier(algorithm: str) -> float:
@@ -569,33 +661,20 @@ def _apply_depletion_metrics(inputs: BatteryInputs, prediction: BatteryPredictio
 def ensemble_from_predictions(inputs: BatteryInputs, predictions: dict[str, BatteryPrediction]) -> BatteryPrediction:
     """Build ensemble result from already-computed model outputs."""
     net, src = resolve_net_power(inputs)
-    resting = _is_resting_like(inputs, net)
-    anchor_soc = _resting_ocv_anchor_soc(predictions) if resting else None
-    weights = ensemble_model_weights(inputs, predictions)
-    terms: list[tuple[float, float]] = []
-    learned_used = False
-    for algorithm, prediction in predictions.items():
-        if prediction.soc_percent is None:
-            continue
-        final_weight = weights.get(algorithm)
-        if final_weight is None:
-            continue
-        if algorithm in inputs.model_accuracy:
-            learned_used = True
-        terms.append((prediction.soc_percent, final_weight))
-
-    soc = _weighted_average(terms)
-    if anchor_soc is not None and soc is not None:
-        soc = (anchor_soc * 0.70) + (soc * 0.30)
+    terms, anchor_soc, anchor_filtered = _robust_soc_terms(inputs, predictions)
+    learned_used = any(algorithm in inputs.model_accuracy for algorithm, _ in terms)
+    soc_values = [soc for _, soc in terms]
+    soc = median(soc_values) if soc_values else None
+    spread = algorithm_spread(predictions)
     tte, ttf = runtime_from_soc(inputs, soc, net, peukert=True, temp=True)
-    conf = "high" if len(terms) >= 4 else "medium" if terms else "low"
-    reason = f"ensemble of {len(terms)} models; {src}"
-    if resting:
-        reason += "; resting voltage-biased weighting"
+    conf = confidence_from_spread(spread, len(terms))
+    reason = f"robust median ensemble of {len(terms)} models; {src}"
     if anchor_soc is not None:
-        reason += "; resting OCV/Shepherd anchor blend"
+        reason += "; resting OCV/Shepherd anchor available"
+    if anchor_filtered:
+        reason += "; anchor-guided outlier rejection"
     if learned_used:
-        reason += "; bounded adaptive accuracy weighting"
+        reason += "; adaptive accuracy diagnostics active"
     return _prediction(ALGORITHM_ENSEMBLE, soc, net, tte, ttf, conf, reason)
 
 

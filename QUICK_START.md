@@ -80,7 +80,7 @@ After setup, the following entities are created:
 | `time_to_empty` | `sensor.battery_time_to_empty` | Hours until fully discharged |
 | `time_to_full` | `sensor.battery_time_to_full` | Hours until fully charged |
 | `net_power` | `sensor.battery_net_power` | Current charging/discharging power (W) |
-| `confidence` | `sensor.battery_confidence` | Prediction confidence (low/medium/high) |
+| `confidence` | `sensor.battery_confidence` | Prediction confidence (`very_low`/`low`/`medium`/`high`) |
 
 ### Diagnostic Sensors (Optional)
 
@@ -89,11 +89,17 @@ Enable in **Settings** → **Devices & Services** → **Entities** to see:
 - **Prediction Health:** Overall prediction quality status
 - **Calibration Status:** Learning progress (0-100%)
 - **Algorithm Spread:** Model divergence indicator
+- **Prediction Confidence:** Spread-based confidence for the active forecast
+- **Active Algorithm:** Algorithm currently backing `estimated_soc`
 - **Battery Health:** Estimated battery health %
 - **Learned Capacity:** Actual measured capacity vs. configured
 - **Learned Peukert Exponent:** Adaptive runtime correction factor
 
-Non-selected model outputs are kept out of the entity list to reduce clutter. They remain visible in diagnostic attributes and Home Assistant logs.
+Comparison sensors are also exposed for beta debugging:
+
+- `soc_ocv`, `soc_coulomb`, `soc_peukert`, `soc_hybrid`, `soc_ensemble`
+- `tte_ocv`, `tte_coulomb`, `tte_peukert`, `tte_hybrid`, `tte_ensemble`
+- `ttf_ocv`, `ttf_coulomb`, `ttf_peukert`, `ttf_hybrid`, `ttf_ensemble`
 
 ---
 
@@ -162,7 +168,7 @@ segments:
 3. Ensure history window (default 60 min) captures full charge/discharge events
 4. Check **calibration_status** sensor for learning progress
 5. Verify battery type selection matches actual battery
-6. Review Home Assistant debug logs if you need to compare alternate model outputs
+6. Review Home Assistant debug logs to compare per-algorithm outputs and selected spread/confidence
 
 ### SOC jumps unexpectedly
 
@@ -174,7 +180,8 @@ segments:
 3. Increase history window to 120-240 minutes
 4. Verify current/power sensors are calibrated
 5. Check for rapid SOC changes in **algorithm_spread** sensor
-6. Inspect diagnostic attributes or debug logs for alternate model disagreement
+6. Compare the per-algorithm SOC sensors to identify the rogue model
+7. Inspect debug logs for `active_algorithm`, spread, and rate-limiting messages
 
 ### Configuration Errors
 
@@ -196,7 +203,7 @@ segments:
 3. **Sensor Quality:** Use direct inverter/BMS sensors rather than derived calculations
 4. **Temperature:** Add temperature sensor if available for better accuracy in varying climates
 5. **Charging:** Ensure charger and discharge profiles are consistent
-6. **Monitoring:** Watch **prediction_health** and **calibration_status** sensors
+6. **Monitoring:** Watch **prediction_health**, **calibration_status**, and **algorithm_spread**
 7. **Patience:** Calibration improves after 5-10 complete charge/discharge cycles
 
 ---

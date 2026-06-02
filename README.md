@@ -26,7 +26,7 @@ The integration degrades gracefully when some sensors are unavailable.
 4. Multiple prediction algorithms estimate SOC, TTE and TTF.
 5. Calibration evidence is collected from observed battery behaviour.
 6. Confidence scores are generated.
-7. The selected algorithm result is exposed as Home Assistant entities, while alternate model outputs remain in diagnostics and logs.
+7. The selected algorithm result is exposed as Home Assistant entities together with per-algorithm comparison sensors and prediction diagnostics.
 
 ### Recorder History Usage
 
@@ -102,6 +102,8 @@ Diagnostic entities include:
 - prediction_health
 - calibration_status
 - algorithm_spread
+- prediction_confidence
+- active_algorithm
 - learned_peukert_exponent
 - peukert_confidence
 - peukert_observation_count
@@ -109,7 +111,13 @@ Diagnostic entities include:
 Diagnostics expose confidence, algorithm selection, event state, calibration readiness, history window and calibration evidence.
 They also expose profile-optimization and ageing details such as effective capacity, effective charge efficiency, and estimated ageing rate.
 
-The integration does not expose per-model SOC entities by default. Non-selected model outputs, spread, and ensemble weighting remain available through diagnostic attributes and coordinator logs.
+Comparison sensors are exposed during the current beta field-validation phase so model divergence is immediately visible:
+
+- `soc_ocv`, `soc_coulomb`, `soc_peukert`, `soc_hybrid`, `soc_ensemble`
+- `tte_ocv`, `tte_coulomb`, `tte_peukert`, `tte_hybrid`, `tte_ensemble`
+- `ttf_ocv`, `ttf_coulomb`, `ttf_peukert`, `ttf_hybrid`, `ttf_ensemble`
+
+Coordinator debug logs also emit per-algorithm values and spread/confidence telemetry on every forecast update.
 
 Home Assistant diagnostics support is included for config-entry troubleshooting. It redacts configured entity IDs and the battery name before export.
 
@@ -144,10 +152,14 @@ The current beta surface includes:
 - Stable config-entry identity
 - Home Assistant Repairs issue for missing source sensors
 - Home Assistant diagnostics download support with redaction
-- Reduced default entity surface with deeper detail in diagnostics/logs
+- Comparison sensors and spread/confidence diagnostics for field debugging
+- Robust median ensemble aggregation
+- Spread-based confidence grading
+- SOC rate limiting and last-valid-SOC preservation
 
 Still pending before a public beta claim is closed:
 
+- live field validation that the new ensemble hardening prevents idle-SOC collapse
 - UI screenshots captured from the live Home Assistant frontend
 - broader live-database recorder benchmarking beyond the current synthetic baseline
 
@@ -160,7 +172,7 @@ Phase 1
 
 Phase 2
 
-- Comparison sensors if field users need them
+- Comparison sensors and observability refinement
 - Model divergence metrics
 
 Phase 3

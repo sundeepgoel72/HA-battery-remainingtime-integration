@@ -79,6 +79,8 @@ def _coordinator(entry: FakeEntry) -> BatteryRemainingTimeCoordinator:
     coordinator.algorithm_spread = None
     coordinator.ensemble_weights = {}
     coordinator.model_weighting = {}
+    coordinator.source_evidence_status = "unknown"
+    coordinator.calibration_allowed = False
     coordinator.stats_store = SimpleNamespace(
         stats=BatteryStats(),
         async_load=AsyncMock(return_value=None),
@@ -188,5 +190,55 @@ def test_runtime_update_uses_recorder_fallback_when_live_sensors_are_missing() -
         assert result.soc_percent == 95.7
         assert coordinator.model_predictions["ensemble"] == prediction
         delete_issue.assert_called_once()
+
+    asyncio.run(scenario())
+
+
+def test_runtime_update_rate_limits_impossible_soc_drop_and_blocks_calibration() -> None:
+    """High-spread collapses should be clamped and kept out of calibration learning."""
+
+    async def scenario() -> None:
+        entry = _entry()
+        coordinator = _coordinator(entry)
+        coordinator._last_soc = 97.0
+        prediction = BatteryPrediction("ensemble", 0.0, "idle", 0.0, None, None, "high", "rogue collapse")
+        history = [HistoryPoint(dt_hours=5 / 60, voltage=12.8, current=0.0)]
+        with (
+            patch(
+                "custom_components.battery_remaining_time.coordinator.async_get_history_points",
+                AsyncMock(return_value=history),
+            ),
+            patch(
+                "custom_components.battery_remaining_time.coordinator.all_model_predictions",
+                return_value={
+                    "ensemble": prediction,
+                    "voltage_only": BatteryPrediction("voltage_only", 97.0, "idle", 0.0, None, None, "high", "ocv"),
+                    "current_flow": BatteryPrediction("current_flow", 0.0, "idle", 0.0, None, None, "low", "rogue"),
+                },
+            ),
+            patch(
+                "custom_components.battery_remaining_time.coordinator.ensemble_model_weights",
+                return_value={"ensemble": 1.0},
+            ),
+            patch(
+                "custom_components.battery_remaining_time.coordinator.ensemble_model_weighting_strategy",
+                return_value={"strategy": "single"},
+            ),
+            patch(
+                "custom_components.battery_remaining_time.coordinator.algorithm_spread",
+                return_value=97.0,
+            ),
+            patch(
+                "custom_components.battery_remaining_time.coordinator.detect_event_state",
+                return_value=BatteryEventState("low_battery", ["soc_below_15"], calibration_anchor=True),
+            ),
+            patch("custom_components.battery_remaining_time.coordinator.ir.async_delete_issue"),
+        ):
+            result = await coordinator._async_update_data()
+
+        assert result.soc_percent == 96.0
+        assert result.confidence == "very_low"
+        assert coordinator.event_state.calibration_anchor is False
+        assert coordinator.calibration_allowed is False
 
     asyncio.run(scenario())

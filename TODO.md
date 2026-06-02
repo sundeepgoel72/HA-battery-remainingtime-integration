@@ -127,3 +127,31 @@ Progress:
 - Added diagnostic sensor key coverage for Peukert learning statistics.
 - Added adaptive ensemble weighting unit coverage.
 - Split tests into predictor, history, storage, config-flow, diagnostics, and integration runtime coverage.
+
+## Task 7 - Ensemble Stability and Observability
+
+Stabilize the ensemble path for field beta and expose enough telemetry to diagnose rogue models immediately.
+
+Requirements:
+
+- Add per-algorithm debug logging for SOC, TTE, and TTF.
+- Replace fragile ensemble mean behavior with robust aggregation.
+- Drive confidence from algorithm spread.
+- Add SOC rate limiting for impossible transitions.
+- Preserve last valid SOC when source telemetry becomes unavailable.
+- Block calibration evidence generation when prediction trust is low.
+- Expose comparison sensors and diagnostic aliases for field debugging.
+
+Completed:
+
+- Added robust median ensemble aggregation across valid SOC values.
+- Rejects invalid SOC values outside `0-100%`.
+- Uses spread-based confidence thresholds with `very_low` support.
+- Rate-limits impossible SOC transitions and downgrades trust when limiting is applied.
+- Preserves the last valid SOC instead of emitting synthetic `0%` on bad updates.
+- Blocks calibration anchors when confidence is low, spread is too high, or source evidence is fallback/insufficient.
+- Exposes `soc_*`, `tte_*`, and `ttf_*` comparison sensors for OCV, Coulomb, Peukert, Hybrid, and Ensemble.
+- Exposes `prediction_confidence` and `active_algorithm` diagnostic aliases.
+- Adds focused pytest regression coverage for spread confidence, robust ensemble behavior, and calibration blocking.
+
+Status: Implemented locally. Pending live Home Assistant validation and push.
