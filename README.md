@@ -161,7 +161,7 @@ The local test surface is intentionally focused on high-level checks:
 Run the local suite with:
 
 ```bash
-cd /mnt/ssd/projects/HA-battery-remainingtime-integration
+cd <repo-dir>
 source .venv/bin/activate
 python -m pytest -q
 ```
