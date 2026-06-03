@@ -1,8 +1,13 @@
 # Battery Remaining Time for Home Assistant
 
-Battery Remaining Time is a Home Assistant custom integration that estimates battery State of Charge (SOC), Time To Empty (TTE), and Time To Full (TTF) for lead-acid battery systems using Home Assistant Recorder history.
+Battery Remaining Time is a Home Assistant custom integration that estimates battery State of Charge (SOC), Time To Empty (TTE), and Time To Full (TTF) for lead-acid battery systems using Home Assistant sensor data and Recorder history.
 
 The project is designed as a self-calibrating battery prediction engine that improves accuracy over time by collecting evidence from real-world battery behaviour.
+
+Local development is intentionally narrower than a full Home Assistant runtime.
+
+- Use the local `.venv` for unit tests, import checks, and linting.
+- Use the live Home Assistant instance for config flow walkthroughs, entity verification, Recorder-backed behaviour, and end-to-end functional checks.
 
 ## Overview
 
@@ -21,7 +26,7 @@ The integration degrades gracefully when some sensors are unavailable.
 ## How It Works
 
 1. Home Assistant entities provide battery telemetry.
-2. Recorder history is analysed over a configurable history window.
+2. Recorder history is analysed when available, but local tests keep that path lazy and isolated.
 3. Battery operating state is detected.
 4. Multiple prediction algorithms estimate SOC, TTE and TTF.
 5. Calibration evidence is collected from observed battery behaviour.
@@ -143,6 +148,25 @@ For a detailed description see docs/ARCHITECTURE.md.
 Add the repository to HACS as a custom repository:
 
 https://github.com/sundeepgoel72/HA-battery-remainingtime-integration
+
+## Local Development
+
+The local test surface is intentionally focused on high-level checks:
+
+- `compileall`
+- `ruff`
+- `pytest`
+- import safety for integration modules
+
+Run the local suite with:
+
+```bash
+cd /mnt/ssd/projects/HA-battery-remainingtime-integration
+source .venv/bin/activate
+python -m pytest -q
+```
+
+Keep Recorder-backed functional validation in the live Home Assistant instance.
 
 ## Beta Readiness
 

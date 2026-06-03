@@ -25,6 +25,26 @@
 
 ---
 
+## Development Workflow
+
+The local workspace is for unit and import testing only. Do not treat the project `.venv` as a full Home Assistant runtime.
+
+Use the local environment for:
+
+- `pytest`
+- `ruff`
+- import-level validation
+- lightweight helper testing
+
+Use the live Home Assistant instance for:
+
+- config flow validation
+- entity creation and restore behaviour
+- Recorder-backed runtime checks
+- end-to-end functional testing
+
+---
+
 ## Configuration
 
 ### Step 1: Basic Settings
@@ -54,6 +74,8 @@ When creating the integration, you'll be asked for:
   - Positive for charging, negative for discharging
 - **History Window:** (Default: 60 minutes) Data lookback for trend analysis
 - **Update Interval:** (Default: 60 seconds) How often to recalculate predictions
+
+The local tests exercise this configuration logic without needing the full Home Assistant runtime.
 
 ### Step 3: Advanced Settings (Optional)
 

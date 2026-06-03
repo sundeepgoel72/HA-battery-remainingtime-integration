@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from math import isfinite, log
 from typing import Any
 
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -104,7 +103,7 @@ class BatteryStats:
 class BatteryStatsStore:
     """Home Assistant storage wrapper for battery statistics."""
 
-    def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
+    def __init__(self, hass: Any, entry_id: str) -> None:
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}_{entry_id}")
         self.stats = BatteryStats()
 

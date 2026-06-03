@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import importlib
 import asyncio
+import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import custom_components.battery_remaining_time.history as history_module
 from custom_components.battery_remaining_time.history import (
     _normalize_raw_history,
     async_get_history_points,
@@ -82,6 +85,17 @@ def test_build_history_points_normalizes_recorder_state_rows() -> None:
     assert points[1].current == -4.5
 
 
+def test_history_module_does_not_import_recorder_at_module_load() -> None:
+    """History helpers should keep Recorder imports lazy."""
+    sys.modules.pop("homeassistant.components.recorder", None)
+    sys.modules.pop("homeassistant.components.recorder.history", None)
+
+    importlib.reload(history_module)
+
+    assert "homeassistant.components.recorder" not in sys.modules
+    assert "homeassistant.components.recorder.history" not in sys.modules
+
+
 def test_async_get_history_points_returns_empty_when_recorder_fails() -> None:
     """Recorder failures should degrade to an empty history set."""
 
@@ -89,7 +103,7 @@ def test_async_get_history_points_returns_empty_when_recorder_fails() -> None:
         hass = SimpleNamespace()
         recorder_instance = SimpleNamespace(async_add_executor_job=AsyncMock(side_effect=RuntimeError("db down")))
         with patch(
-            "custom_components.battery_remaining_time.history.recorder.get_instance",
+            "homeassistant.components.recorder.get_instance",
             return_value=recorder_instance,
         ):
             points = await async_get_history_points(

@@ -6,9 +6,6 @@ from datetime import datetime, timedelta
 import logging
 from typing import Any
 
-from homeassistant.components import recorder
-from homeassistant.components.recorder.history import get_significant_states
-from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .predictor import HistoryPoint
@@ -122,7 +119,7 @@ def history_start_time(minutes: int, since: datetime | None = None) -> datetime:
 
 
 async def async_get_history_points(
-    hass: HomeAssistant,
+    hass: Any,
     entities: dict[str, str | None],
     minutes: int,
     since: datetime | None = None,
@@ -136,6 +133,8 @@ async def async_get_history_points(
     end_time = dt_util.utcnow()
     start_time = history_start_time(minutes, since)
     _LOGGER.debug("Fetching recorder history for %s over %s minutes", entity_ids, minutes)
+    from homeassistant.components import recorder
+    from homeassistant.components.recorder.history import get_significant_states
 
     def fetch():
         return get_significant_states(

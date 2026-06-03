@@ -40,6 +40,14 @@ This repo is organized for two Codex agents sharing the same checkout:
 
 Canonical coordination files live in `.codex/`.
 
+## Local Test Model
+
+The local `.venv` is intentionally narrow.
+
+* Use it for unit tests, import checks, linting, and helper-level verification.
+* Do not try to mirror a full Home Assistant runtime in the venv.
+* Validate config flow, entity lifecycle, Recorder-backed behaviour, and other functional scenarios in the live Home Assistant instance.
+
 ## Durable Constraints
 
 - Do not remove existing Home Assistant entity IDs or unique ID stability without explicit migration handling.

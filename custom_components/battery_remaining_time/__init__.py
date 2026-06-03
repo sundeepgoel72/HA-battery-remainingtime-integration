@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from typing import Any
 
 from .const import DOMAIN, PLATFORMS
 from .coordinator import BatteryRemainingTimeCoordinator
 
 
-async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _async_update_listener(hass: Any, entry: Any) -> None:
     """Reload entry when options or config data change."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: Any, entry: Any) -> bool:
     """Set up Battery Remaining Time from a config entry."""
     coordinator = BatteryRemainingTimeCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
@@ -25,7 +24,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: Any, entry: Any) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
