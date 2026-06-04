@@ -1,5 +1,7 @@
 # Battery Remaining Time for Home Assistant
 
+Licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+
 Battery Remaining Time is a Home Assistant custom integration that estimates battery State of Charge (SOC), Time To Empty (TTE), and Time To Full (TTF) for lead-acid battery systems using Home Assistant sensor data and Recorder history.
 
 The project is designed as a self-calibrating battery prediction engine that improves accuracy over time by collecting evidence from real-world battery behaviour.
