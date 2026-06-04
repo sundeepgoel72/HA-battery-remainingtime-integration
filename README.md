@@ -107,14 +107,21 @@ Diagnostic entities include:
 - prediction_health
 - calibration_status
 - algorithm_spread
+- model_accuracy
 - prediction_confidence
 - active_algorithm
+- usable_soc
+- time_to_depletion
+- configured_depletion_voltage
+- learned_depletion_voltage
+- depletion_voltage_confidence
 - learned_peukert_exponent
 - peukert_confidence
 - peukert_observation_count
 
 Diagnostics expose confidence, algorithm selection, event state, calibration readiness, history window and calibration evidence.
-They also expose profile-optimization and ageing details such as effective capacity, effective charge efficiency, and estimated ageing rate.
+They also expose profile-optimization and ageing details such as effective capacity, effective charge efficiency, estimated ageing rate, and model-accuracy convergence.
+The usable-SOC path adds depletion-voltage diagnostics so flooded lead-acid systems can use practical cutoff values without bundling later chemistry-learning work.
 
 Comparison sensors are exposed during the current beta field-validation phase so model divergence is immediately visible:
 
@@ -186,6 +193,16 @@ Still pending before a public beta claim is closed:
 - live field validation that the new ensemble hardening prevents idle-SOC collapse
 - UI screenshots captured from the live Home Assistant frontend
 - broader live-database recorder benchmarking beyond the current synthetic baseline
+
+## MVP 2 Validation Checklist
+
+Use the live Home Assistant instance to validate the following in order:
+
+1. Main forecast: `estimated_soc`, `time_to_empty`, `time_to_full`, `confidence`, `algorithm`
+2. Diagnostics: `prediction_health`, `calibration_status`, `algorithm_spread`, `prediction_confidence`, `active_algorithm`
+3. Comparison sensors: `soc_*`, `tte_*`, and `ttf_*` outputs for divergence and outliers
+4. Stability: confirm the forecast does not collapse to synthetic `0%` under idle or weak-source conditions
+5. Release imagery: capture the screenshot set in `docs/SCREENSHOTS.md`
 
 ## Roadmap
 

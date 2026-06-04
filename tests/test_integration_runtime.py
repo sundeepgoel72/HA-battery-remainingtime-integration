@@ -85,9 +85,10 @@ def _coordinator(entry: FakeEntry) -> BatteryRemainingTimeCoordinator:
         stats=BatteryStats(),
         async_load=AsyncMock(return_value=None),
         async_record_update=AsyncMock(return_value=None),
-        optimized_profile=lambda configured_capacity: {
+        optimized_profile=lambda configured_capacity, configured_depletion_voltage=None: {
             "effective_capacity_ah": configured_capacity,
             "effective_charge_efficiency": 0.85,
+            "effective_depletion_voltage": configured_depletion_voltage,
         },
         effective_peukert_exponent=lambda: 1.2,
     )

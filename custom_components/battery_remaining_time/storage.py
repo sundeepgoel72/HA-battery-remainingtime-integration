@@ -72,6 +72,10 @@ class BatteryStats:
     learned_empty_voltage: float | None = None
     full_voltage_observation_count: int = 0
     empty_voltage_observation_count: int = 0
+    learned_depletion_voltage: float | None = None
+    depletion_voltage_confidence: str = "low"
+    depletion_voltage_observation_count: int = 0
+    depletion_voltage_observations: list[dict[str, Any]] = field(default_factory=list)
     learned_charge_efficiency: float | None = None
     charge_efficiency_confidence: str = "low"
     charge_efficiency_observation_count: int = 0
@@ -135,10 +139,22 @@ class BatteryStatsStore:
             return configured_exponent
         return _clamp(self.stats.learned_peukert_exponent, MIN_PEUCKERT_EXPONENT, MAX_PEUCKERT_EXPONENT)
 
-    def optimized_profile(self, configured_capacity_ah: float) -> dict[str, Any]:
+    def effective_depletion_voltage(self, configured_voltage: float | None) -> float | None:
+        """Return learned depletion voltage only when enough evidence exists."""
+        learned_voltage = self.stats.learned_depletion_voltage
+        if configured_voltage is None:
+            return learned_voltage if self.stats.depletion_voltage_confidence != "low" else None
+        if self.stats.depletion_voltage_confidence == "low" or learned_voltage is None:
+            return configured_voltage
+        lower = max(configured_voltage * 0.80, 1.0)
+        upper = configured_voltage * 1.05
+        return round(_clamp(learned_voltage, lower, upper), 2)
+
+    def optimized_profile(self, configured_capacity_ah: float, configured_depletion_voltage: float | None = None) -> dict[str, Any]:
         """Return profile optimization details for diagnostics and logging."""
         effective_capacity = self.effective_capacity_ah(configured_capacity_ah)
         effective_efficiency = self.effective_charge_efficiency()
+        effective_depletion_voltage = self.effective_depletion_voltage(configured_depletion_voltage)
         configured_capacity = max(configured_capacity_ah, 0.1)
         retention = self.stats.capacity_retention_percent
         if retention is None and self.stats.learned_capacity_ah is not None:
@@ -158,8 +174,10 @@ class BatteryStatsStore:
             ),
             "effective_capacity_ah": effective_capacity,
             "effective_charge_efficiency": effective_efficiency,
+            "effective_depletion_voltage": effective_depletion_voltage,
             "capacity_source": "learned" if effective_capacity != round(configured_capacity_ah, 2) else "configured",
             "charge_efficiency_source": "learned" if effective_efficiency != round(DEFAULT_CHARGE_EFFICIENCY, 3) else "configured",
+            "depletion_voltage_source": "learned" if effective_depletion_voltage is not None and self.stats.depletion_voltage_confidence != "low" else "configured",
             "capacity_retention_percent": retention,
             "battery_ageing_rate_percent_per_100_cycles": ageing_rate,
         }
@@ -489,6 +507,31 @@ class BatteryStatsStore:
             )
             self.stats.empty_voltage_observation_count += 1
 
+        if event_state.state in {"low_battery", "depletion_imminent"} and inputs.voltage is not None:
+            learned_depletion = inputs.voltage
+            self.stats.learned_depletion_voltage = _running_average(
+                self.stats.learned_depletion_voltage,
+                learned_depletion,
+                self.stats.depletion_voltage_observation_count,
+            )
+            self.stats.depletion_voltage_observation_count += 1
+            depletion_observation = {
+                "timestamp": now,
+                "event_state": event_state.state,
+                "voltage": round(inputs.voltage, 4),
+                "usable_soc": round(prediction.usable_soc_percent, 2) if prediction.usable_soc_percent is not None else None,
+                "depletion_voltage": round(inputs.depletion_voltage, 4) if inputs.depletion_voltage is not None else None,
+                "confidence": "medium" if self.stats.depletion_voltage_observation_count >= 3 else "low",
+            }
+            self.stats.depletion_voltage_observations.append(depletion_observation)
+            self.stats.depletion_voltage_observations = self.stats.depletion_voltage_observations[-MAX_ANCHOR_OBSERVATIONS:]
+            if self.stats.depletion_voltage_observation_count >= 8:
+                self.stats.depletion_voltage_confidence = "high"
+            elif self.stats.depletion_voltage_observation_count >= 3:
+                self.stats.depletion_voltage_confidence = "medium"
+            else:
+                self.stats.depletion_voltage_confidence = "low"
+
         previous = self.stats.last_capacity_anchor
         if not previous:
             return
@@ -562,6 +605,8 @@ class BatteryStatsStore:
             return
 
         self.stats.last_capacity_anchor = anchor
+        if inputs.depletion_voltage is not None:
+            self.stats.last_capacity_anchor["depletion_voltage"] = inputs.depletion_voltage
 
         if soc_delta < 8.0 or discharged_ah <= 0:
             return

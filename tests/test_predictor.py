@@ -23,6 +23,7 @@ from custom_components.battery_remaining_time.sensor import (
     DEFAULT_EXPECTED_CYCLE_LIFE,
     EXPECTED_CYCLE_LIFE_BY_TYPE,
     HEALTH_SENSORS,
+    SENSOR_NAMES,
     _expected_cycle_life,
 )
 
@@ -165,3 +166,18 @@ def test_comparison_and_alias_sensor_keys_are_exposed() -> None:
     assert {"tte_ocv", "tte_coulomb", "tte_peukert", "tte_hybrid", "tte_ensemble"} <= comparison_keys
     assert {"ttf_ocv", "ttf_coulomb", "ttf_peukert", "ttf_hybrid", "ttf_ensemble"} <= comparison_keys
     assert {"prediction_confidence", "active_algorithm"} <= alias_keys
+    assert "model_accuracy" in SENSOR_NAMES
+    assert {"usable_soc", "time_to_depletion", "configured_depletion_voltage", "learned_depletion_voltage", "depletion_voltage_confidence"} <= set(SENSOR_NAMES)
+
+
+def test_depletion_voltage_sensor_surface_is_stable_for_release_smoke() -> None:
+    """Release smoke should keep the depletion-voltage sensor names stable."""
+    expected = {
+        "usable_soc",
+        "time_to_depletion",
+        "configured_depletion_voltage",
+        "learned_depletion_voltage",
+        "depletion_voltage_confidence",
+    }
+
+    assert expected <= set(SENSOR_NAMES)

@@ -53,3 +53,11 @@
 - [x] Repo releasable on `dev`
 - [x] Home Assistant integration smoke tested after sync
 - [ ] Public beta release assets fully complete
+
+## MVP 2 Beta Readiness
+
+- [x] Stable forecast baseline confirmed in live Home Assistant telemetry
+- [ ] UI screenshot set captured and committed
+- [ ] HACS custom-repository install flow verified in the live frontend
+- [ ] Adaptive-learning convergence characterized from live data
+- [ ] Release notes and handover aligned with current live baseline

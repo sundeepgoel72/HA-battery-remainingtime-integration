@@ -216,13 +216,14 @@ class BatteryRemainingTimeCoordinator(DataUpdateCoordinator[BatteryPrediction]):
             self._last_soc,
         )
         configured_capacity_ah = float(data[CONF_BATTERY_CAPACITY_AH])
-        optimized_profile = self.stats_store.optimized_profile(configured_capacity_ah)
+        configured_depletion_voltage = float(data[CONF_DEPLETION_VOLTAGE]) if data.get(CONF_DEPLETION_VOLTAGE) not in (None, "") else None
+        optimized_profile = self.stats_store.optimized_profile(configured_capacity_ah, configured_depletion_voltage)
 
         inputs = BatteryInputs(
             algorithm=selected_algorithm,
             capacity_ah=float(optimized_profile["effective_capacity_ah"]),
             nominal_voltage=float(data[CONF_NOMINAL_VOLTAGE]),
-            depletion_voltage=float(data[CONF_DEPLETION_VOLTAGE]) if data.get(CONF_DEPLETION_VOLTAGE) not in (None, "") else None,
+            depletion_voltage=optimized_profile["effective_depletion_voltage"],
             voltage=voltage,
             current=current,
             charge_power=charge_power,

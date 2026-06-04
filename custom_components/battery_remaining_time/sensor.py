@@ -65,6 +65,8 @@ SENSOR_NAMES = {
     "estimated_soc": "Estimated SOC",
     "time_to_empty": "Time to empty",
     "time_to_full": "Time to full",
+    "usable_soc": "Usable SOC",
+    "time_to_depletion": "Time to depletion",
     "net_power": "Net power",
     "mode": "Mode",
     "confidence": "Confidence",
@@ -78,6 +80,9 @@ SENSOR_NAMES = {
     "capacity_confidence": "Capacity confidence",
     "learned_full_voltage": "Learned full voltage",
     "learned_empty_voltage": "Learned empty voltage",
+    "configured_depletion_voltage": "Configured depletion voltage",
+    "learned_depletion_voltage": "Learned depletion voltage",
+    "depletion_voltage_confidence": "Depletion voltage confidence",
     "learned_charge_efficiency": "Learned charge efficiency",
     "learned_peukert_exponent": "Learned Peukert exponent",
     "peukert_confidence": "Peukert confidence",
@@ -85,6 +90,7 @@ SENSOR_NAMES = {
     "remaining_cycles": "Remaining cycles",
     "remaining_life": "Remaining life",
     "algorithm_spread": "Algorithm spread",
+    "model_accuracy": "Model accuracy",
     "prediction_confidence": "Prediction confidence",
     "active_algorithm": "Active algorithm",
     "prediction_health": "Prediction health",
@@ -162,6 +168,22 @@ SENSORS: tuple[BatterySensorDescription, ...] = (
         value_fn=lambda data: data.time_to_full_h,
     ),
     BatterySensorDescription(
+        key="usable_soc",
+        name=SENSOR_NAMES["usable_soc"],
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.usable_soc_percent,
+    ),
+    BatterySensorDescription(
+        key="time_to_depletion",
+        name=SENSOR_NAMES["time_to_depletion"],
+        native_unit_of_measurement=UnitOfTime.HOURS,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.time_to_depletion_h,
+    ),
+    BatterySensorDescription(
         key="net_power",
         name=SENSOR_NAMES["net_power"],
         native_unit_of_measurement=UnitOfPower.WATT,
@@ -237,6 +259,27 @@ HEALTH_SENSORS: tuple[BatteryStatsSensorDescription, ...] = (
         value_fn=lambda stats: round(stats.learned_empty_voltage, 3) if getattr(stats, "learned_empty_voltage", None) is not None else None,
     ),
     BatteryStatsSensorDescription(
+        key="configured_depletion_voltage",
+        name=SENSOR_NAMES["configured_depletion_voltage"],
+        native_unit_of_measurement=UNIT_VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda stats: getattr(stats, "configured_depletion_voltage", None),
+    ),
+    BatteryStatsSensorDescription(
+        key="learned_depletion_voltage",
+        name=SENSOR_NAMES["learned_depletion_voltage"],
+        native_unit_of_measurement=UNIT_VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda stats: round(stats.learned_depletion_voltage, 3) if getattr(stats, "learned_depletion_voltage", None) is not None else None,
+    ),
+    BatteryStatsSensorDescription(
+        key="depletion_voltage_confidence",
+        name=SENSOR_NAMES["depletion_voltage_confidence"],
+        value_fn=lambda stats: getattr(stats, "depletion_voltage_confidence", "low"),
+    ),
+    BatteryStatsSensorDescription(
         key="learned_charge_efficiency",
         name=SENSOR_NAMES["learned_charge_efficiency"],
         native_unit_of_measurement=PERCENTAGE,
@@ -308,6 +351,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entities.extend(BatteryComparisonSensor(coordinator, entry, description) for description in COMPARISON_SENSORS)
     entities.extend(BatteryDiagnosticAliasSensor(coordinator, entry, description) for description in DIAGNOSTIC_ALIAS_SENSORS)
     entities.append(BatteryAlgorithmSpreadSensor(coordinator, entry))
+    entities.append(BatteryModelAccuracySensor(coordinator, entry))
     entities.append(BatteryPredictionHealthSensor(coordinator, entry))
     entities.append(BatteryCalibrationStatusSensor(coordinator, entry))
     async_add_entities(entities)
@@ -394,6 +438,32 @@ def _algorithm_outlier(coordinator: BatteryRemainingTimeCoordinator) -> str | No
     median = sorted_values[mid] if len(sorted_values) % 2 else (sorted_values[mid - 1] + sorted_values[mid]) / 2
     model, distance = max(((model, abs(value - median)) for model, value in values.items()), key=lambda item: item[1])
     return model if distance >= 5.0 else None
+
+
+def _model_accuracy_summary(coordinator: BatteryRemainingTimeCoordinator) -> dict[str, Any]:
+    """Return a compact summary of learned model accuracy."""
+    stats = coordinator.stats_store.stats
+    accuracy = stats.model_accuracy
+    if not accuracy:
+        return {
+            "average_accuracy": None,
+            "best_model": None,
+            "worst_model": None,
+            "learned_model_count": 0,
+            "model_accuracy": {},
+        }
+
+    learned = {model: float(value) for model, value in accuracy.items() if isinstance(value, (int, float))}
+    average_accuracy = round(sum(learned.values()) / len(learned), 3) if learned else None
+    best_model = max(learned, key=learned.get) if learned else None
+    worst_model = min(learned, key=learned.get) if learned else None
+    return {
+        "average_accuracy": average_accuracy,
+        "best_model": best_model,
+        "worst_model": worst_model,
+        "learned_model_count": len(learned),
+        "model_accuracy": learned,
+    }
 
 
 def _confidence_score(coordinator: BatteryRemainingTimeCoordinator) -> int | None:
@@ -619,12 +689,15 @@ class BatteryStatsSensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], Sen
             **_battery_profile_attrs(self._entry),
             "health_confidence": self.coordinator.stats_store.stats.health_confidence,
             "capacity_confidence": self.coordinator.stats_store.stats.capacity_confidence,
+            "depletion_voltage_confidence": self.coordinator.stats_store.stats.depletion_voltage_confidence,
             "peukert_confidence": self.coordinator.stats_store.stats.peukert_confidence,
             "health_observation_count": self.coordinator.stats_store.stats.health_observation_count,
             "capacity_observation_count": self.coordinator.stats_store.stats.capacity_observation_count,
+            "depletion_voltage_observation_count": self.coordinator.stats_store.stats.depletion_voltage_observation_count,
             "peukert_observation_count": self.coordinator.stats_store.stats.peukert_observation_count,
             "profile_optimization_active": profile["profile_optimization_active"],
             "effective_capacity_ah": profile["effective_capacity_ah"],
+            "effective_depletion_voltage": profile["effective_depletion_voltage"],
             "effective_charge_efficiency": profile["effective_charge_efficiency"],
         }
 
@@ -661,6 +734,46 @@ class BatteryAlgorithmSpreadSensor(CoordinatorEntity[BatteryRemainingTimeCoordin
             "ensemble_weights": self.coordinator.ensemble_weights,
             "selected_algorithm": selected.algorithm if selected else None,
             "selected_soc_percent": selected.soc_percent if selected else None,
+            "source_evidence_status": self.coordinator.source_evidence_status,
+            **_battery_profile_attrs(self._entry),
+        }
+
+
+class BatteryModelAccuracySensor(CoordinatorEntity[BatteryRemainingTimeCoordinator], SensorEntity):
+    """Learned model accuracy summary sensor."""
+
+    _attr_has_entity_name = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_name = SENSOR_NAMES["model_accuracy"]
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: BatteryRemainingTimeCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_model_accuracy"
+        self._attr_suggested_object_id = _object_id(entry, "model_accuracy")
+        self._attr_device_info = _device_info(entry)
+
+    @property
+    def native_value(self) -> float | None:
+        summary = _model_accuracy_summary(self.coordinator)
+        average_accuracy = summary["average_accuracy"]
+        if average_accuracy is None:
+            return None
+        return round(float(average_accuracy) * 100.0, 1)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        summary = _model_accuracy_summary(self.coordinator)
+        return {
+            "average_accuracy": summary["average_accuracy"],
+            "best_model": summary["best_model"],
+            "worst_model": summary["worst_model"],
+            "learned_model_count": summary["learned_model_count"],
+            "model_accuracy": summary["model_accuracy"],
+            "confidence_score": _confidence_score(self.coordinator),
+            "algorithm_spread": self.coordinator.algorithm_spread,
             "source_evidence_status": self.coordinator.source_evidence_status,
             **_battery_profile_attrs(self._entry),
         }

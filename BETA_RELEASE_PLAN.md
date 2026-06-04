@@ -11,6 +11,19 @@
 
 The repository is ready for a HACS custom-repository beta from a code and validation standpoint. The remaining work is mostly release presentation and live-user confirmation rather than architectural or compatibility gaps.
 
+Current live baseline:
+
+- `prediction_health=ok`
+- `confidence=high`
+- `algorithm_spread=0.0`
+- `source_evidence_status=live`
+- `update_count=6923`
+- `history_window_minutes=180`
+- `capacity_confidence=low`
+- `peukert_confidence=low`
+- `peukert_observation_count=0`
+- `effective_charge_efficiency=1.05`
+
 Confirmed in the current codebase:
 
 - `manifest.json` and `hacs.json` are aligned and HACS-compatible
@@ -51,6 +64,7 @@ Confirmed in the current codebase:
 1. Capture and commit the UI screenshots listed in `docs/SCREENSHOTS.md`
 2. Confirm HACS custom-repository install end to end in the live HA frontend
 3. Run the GitHub workflows after push and confirm green status
+4. Characterize adaptive-learning convergence from live data and document any questionable learned values
 
 ## Release Decision
 
@@ -61,6 +75,9 @@ Release criteria are met for the integration itself:
 - Repairs behavior verified
 - live Home Assistant restart and fallback behavior verified
 - HACS and manifest validation automated
+- stable live forecast baseline confirmed
+
+The remaining open beta question is adaptive-learning convergence, not ensemble stability.
 
 ## Release Steps
 

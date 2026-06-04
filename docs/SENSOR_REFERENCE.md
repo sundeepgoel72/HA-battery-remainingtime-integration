@@ -356,6 +356,24 @@ These sensors track the learned Peukert exponent, a critical parameter for disch
 - 10-20%: Notable divergence
 - > 20%: Algorithms disagree significantly
 
+### Model Accuracy
+**Entity ID:** `sensor.{battery_name}_model_accuracy`  
+**Type:** Percentage (0-100%)  
+**Unit:** `%`  
+**Category:** Diagnostic
+
+**Description:** Summary score for learned model-accuracy convergence across calibration anchors.
+
+**Attributes:**
+- `average_accuracy` - Mean learned accuracy across calibrated models
+- `best_model` - Highest-scoring learned model
+- `worst_model` - Lowest-scoring learned model
+- `learned_model_count` - Number of models with accuracy history
+- `model_accuracy` - Per-model accuracy map
+- `confidence_score` - Overall operational confidence score
+- `algorithm_spread` - Current spread at the time of reporting
+- `source_evidence_status` - `live`, `recorder_fallback`, or `insufficient`
+
 ---
 
 ## Model Comparison Visibility
@@ -407,6 +425,41 @@ The relevant diagnostic attributes include:
 **Category:** Diagnostic
 
 **Description:** Measured charge efficiency accounting for losses.
+
+### Usable SOC / Depletion Voltage Sensors
+**Entity ID:** `sensor.{battery_name}_usable_soc`  
+**Type:** Percentage (0-100%)  
+**Unit:** `%`  
+**Category:** Primary
+
+**Description:** Practical SOC above the configured or learned depletion voltage.
+
+**Entity ID:** `sensor.{battery_name}_time_to_depletion`  
+**Type:** Duration  
+**Unit:** `h`  
+**Category:** Primary
+
+**Description:** Runtime remaining until the depletion voltage is reached.
+
+**Entity ID:** `sensor.{battery_name}_configured_depletion_voltage`  
+**Type:** Voltage  
+**Unit:** `V`  
+**Category:** Diagnostic
+
+**Description:** Configured depletion-voltage cutoff from the config entry.
+
+**Entity ID:** `sensor.{battery_name}_learned_depletion_voltage`  
+**Type:** Voltage  
+**Unit:** `V`  
+**Category:** Diagnostic
+
+**Description:** Learned depletion-voltage cutoff from low-battery and depletion-imminent anchors.
+
+**Entity ID:** `sensor.{battery_name}_depletion_voltage_confidence`  
+**Type:** Text  
+**Category:** Diagnostic
+
+**Description:** Confidence level for the learned depletion-voltage cutoff.
 
 ---
 

@@ -13,6 +13,16 @@ Estimated readiness: `90%`
 
 The integration code, diagnostics, tests, and release automation remain in good shape, but a critical field defect was discovered in the ensemble path during idle conditions. The current build should be treated as a stabilization beta until the new spread/confidence and ensemble hardening are verified in live Home Assistant telemetry.
 
+Live validation snapshot:
+
+- `prediction_health=ok`
+- `confidence=high`
+- `algorithm_spread=0.0`
+- `source_evidence_status=live`
+- `capacity_confidence=low`
+- `peukert_confidence=low`
+- `effective_charge_efficiency=1.05`
+
 ## What Is Implemented
 
 - Config flow and options flow
@@ -56,6 +66,7 @@ Highlights from the previously validated beta baseline:
 - longer live validation of the Issue #17 stabilization fix in Home Assistant
 - UI screenshots listed in [docs/SCREENSHOTS.md](./docs/SCREENSHOTS.md)
 - live recorder-database benchmarking follow-up beyond the synthetic baseline in [docs/RECORDER_BENCHMARKING.md](./docs/RECORDER_BENCHMARKING.md)
+- adaptive-learning convergence validation and issue #19 follow-up
 
 ## Risk Summary
 
@@ -68,4 +79,4 @@ Main remaining risks are:
 
 ## Release Recommendation
 
-Keep `v0.1.0-beta.2` positioned as a field-validation beta. Do not advance the public beta claim until the ensemble-stability fix has longer live validation against real telemetry.
+Keep `v0.1.0-beta.2` positioned as a field-validation beta. The ensemble-stability fix is currently holding; do not advance the public beta claim until the adaptive-learning convergence question is characterized and the remaining release artifacts are complete.

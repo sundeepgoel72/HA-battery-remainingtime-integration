@@ -141,6 +141,36 @@ def test_profile_optimization_falls_back_when_learning_confidence_is_low() -> No
     assert profile["charge_efficiency_source"] == "configured"
 
 
+def test_profile_optimization_includes_learned_depletion_voltage_when_trusted() -> None:
+    """Trusted depletion-voltage learning should flow into the effective profile."""
+    store = object.__new__(BatteryStatsStore)
+    store.stats = BatteryStats(
+        learned_depletion_voltage=10.7,
+        depletion_voltage_confidence="medium",
+    )
+
+    profile = store.optimized_profile(100.0, 11.8)
+
+    assert store.effective_depletion_voltage(11.8) == 10.7
+    assert profile["effective_depletion_voltage"] == 10.7
+    assert profile["depletion_voltage_source"] == "learned"
+
+
+def test_profile_optimization_falls_back_to_configured_depletion_voltage_when_learning_is_low() -> None:
+    """Low-confidence depletion-voltage learning should not override the config value."""
+    store = object.__new__(BatteryStatsStore)
+    store.stats = BatteryStats(
+        learned_depletion_voltage=10.7,
+        depletion_voltage_confidence="low",
+    )
+
+    profile = store.optimized_profile(100.0, 11.8)
+
+    assert store.effective_depletion_voltage(11.8) == 11.8
+    assert profile["effective_depletion_voltage"] == 11.8
+    assert profile["depletion_voltage_source"] == "configured"
+
+
 def test_storage_persistence_round_trips_stats() -> None:
     """Persistent stats should save and load from the HA store."""
 
@@ -168,8 +198,31 @@ def test_storage_persistence_round_trips_stats() -> None:
 
         assert loaded.stats.learned_capacity_ah == 123.4
         assert loaded.stats.capacity_confidence == "medium"
+        assert loaded.stats.model_error_stats == {}
 
     asyncio.run(scenario())
+
+
+def test_low_battery_anchor_learns_depletion_voltage() -> None:
+    """Low-battery anchors should update depletion-voltage learning and confidence."""
+    store = object.__new__(BatteryStatsStore)
+    store.stats = BatteryStats()
+    inputs = BatteryInputs(
+        algorithm="ensemble",
+        capacity_ah=100.0,
+        nominal_voltage=12.0,
+        voltage=11.7,
+        depletion_voltage=11.8,
+    )
+    event_state = BatteryEventState("low_battery", ["depletion_voltage"], calibration_anchor=True)
+    prediction = BatteryPrediction("ensemble", 12.0, "discharging", -80.0, 4.0, 0.0, "medium", "test")
+
+    store._record_anchor_observation("2026-01-01T00:00:00+00:00", inputs, prediction, event_state)
+
+    assert store.stats.depletion_voltage_observation_count == 1
+    assert store.stats.learned_depletion_voltage == 11.7
+    assert store.stats.depletion_voltage_confidence == "low"
+    assert store.stats.depletion_voltage_observations[-1]["depletion_voltage"] == 11.8
 
 
 def _peukert_history() -> list[HistoryPoint]:

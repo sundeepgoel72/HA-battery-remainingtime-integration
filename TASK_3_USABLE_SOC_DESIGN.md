@@ -2,8 +2,8 @@
 
 **Objective:** Add depletion voltage feature with new sensors, diagnostics, and event states.
 
-**Status:** Implementation Planning & Design  
-**Target:** Complete by end of this session
+**Status:** Partially implemented; active work tracked in issue #23  
+**Target:** Complete the remaining depletion-voltage validation and sensor hardening
 
 ---
 
@@ -149,6 +149,17 @@ Calibration Anchor: true
 - Useful for automation alerts and learning events
 
 ---
+
+## Current Implementation Status
+
+The core usable SOC and depletion-voltage path is now partially implemented:
+
+- `usable_soc` and `time_to_depletion` are exposed in the predictor and sensor surface.
+- `configured_depletion_voltage` and `learned_depletion_voltage` diagnostics are exposed in Home Assistant.
+- Learned depletion-voltage is persisted from low-battery and depletion-imminent anchors.
+- Temperature coefficient learning and prediction error statistics remain deferred to issue `#21`.
+
+The remaining work for this task is validation, tuning, and documentation cleanup rather than adding the later-phase chemistry learning scope.
 
 ## Implementation Plan
 
