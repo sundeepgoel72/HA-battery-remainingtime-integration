@@ -4,7 +4,9 @@ __pycache__/
 .venv/
 .pytest_cache/
 .ruff_cache/
-.codex/
-.agents/
-HANDOVER.md
-TODO.md
+
+# Local coordination artifacts
+/.codex/
+/.agents/
+/HANDOVER.md
+/TODO.md
