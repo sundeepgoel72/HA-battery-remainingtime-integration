@@ -43,7 +43,7 @@ async def async_get_config_entry_diagnostics(
     return {
         "entry": {
             "entry_id": entry.entry_id,
-            "title": entry.title,
+            "title": "**REDACTED**",
             "data": async_redact_data(dict(entry.data), TO_REDACT),
             "options": async_redact_data(dict(entry.options), TO_REDACT),
             "runtime_config": async_redact_data(dict(runtime_config(entry)), TO_REDACT),

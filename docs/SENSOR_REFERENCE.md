@@ -268,7 +268,7 @@ These sensors track the learned Peukert exponent, a critical parameter for disch
 
 **What it means:**
 - Value > 1.3: Battery runtime varies significantly with discharge rate
-- Value ≈ 1.3: Standard lead-acid behavior
+- Value around 1.3: Standard lead-acid behavior
 - Value < 1.3: Better high-rate discharge performance
 
 ### Peukert Confidence
