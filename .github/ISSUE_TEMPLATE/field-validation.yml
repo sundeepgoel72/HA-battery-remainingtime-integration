@@ -1,0 +1,86 @@
+name: Field validation report
+description: Share real battery results from a Home Assistant setup.
+title: "[Field validation] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing Battery Remaining Time. Real charge/discharge observations are the most useful feedback for improving the models.
+  - type: input
+    id: home_assistant_version
+    attributes:
+      label: Home Assistant version
+      placeholder: "2024.6.0"
+    validations:
+      required: true
+  - type: input
+    id: integration_version
+    attributes:
+      label: Integration version
+      placeholder: "0.1.0-beta.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: battery_type
+    attributes:
+      label: Battery type
+      options:
+        - Flooded lead acid
+        - Tubular lead acid
+        - AGM
+        - Gel
+        - Lead carbon
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: battery_bank
+    attributes:
+      label: Battery bank
+      description: Capacity, nominal voltage, and any useful brand/model details.
+      placeholder: "150 Ah, 12 V tubular lead-acid"
+    validations:
+      required: true
+  - type: textarea
+    id: source_sensors
+    attributes:
+      label: Source sensors
+      description: List the voltage, current, charge power, discharge power, and temperature sensors you configured.
+      placeholder: |
+        voltage: sensor.inverter_battery_voltage
+        current: sensor.inverter_battery_current
+        charge power:
+        discharge power:
+        temperature:
+    validations:
+      required: true
+  - type: textarea
+    id: observation
+    attributes:
+      label: What did you observe?
+      description: Compare the integration forecast with real inverter/runtime behaviour.
+      placeholder: |
+        estimated_soc:
+        time_to_empty:
+        time_to_full:
+        confidence:
+        prediction_health:
+        algorithm_spread:
+        real observed runtime or inverter value:
+    validations:
+      required: true
+  - type: textarea
+    id: mismatch
+    attributes:
+      label: If the forecast was wrong, how was it wrong?
+      placeholder: "Example: TTE said 4 hours but the inverter reached cutoff after 2.5 hours."
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Attach a Home Assistant diagnostics export if you can. The integration redacts configured entity IDs and battery name.
+  - type: textarea
+    id: extra_context
+    attributes:
+      label: Extra context
+      description: Add inverter model, sensor integration, screenshots, or unusual load/charge behaviour.
