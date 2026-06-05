@@ -47,6 +47,7 @@ def test_config_entry_diagnostics_redact_entity_ids_and_name() -> None:
 
     diagnostics = asyncio.run(async_get_config_entry_diagnostics(hass, entry))
 
+    assert diagnostics["entry"]["title"] == "**REDACTED**"
     assert diagnostics["entry"]["data"]["name"] == "**REDACTED**"
     assert diagnostics["entry"]["data"]["voltage_sensor"] == "**REDACTED**"
     assert diagnostics["entry"]["data"]["current_sensor"] == "**REDACTED**"
